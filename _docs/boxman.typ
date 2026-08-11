@@ -42,11 +42,9 @@ Box Man is a tool that takes in Game Boy ROMs and emits LLVM IR, which can then 
 
 = Architecture
 
-Box Man isn't a fully self-contained static recompiler. It focuses mainly on statically recompiling the CPU, i.e., the actual instruction stream the game executes. Hardware peripherals like the PPU, APU, and timer are not part of the instruction stream, and the CPU communicates with them through memory-mapped I/O. Due to this, we implement the behavior of the above hardware peripherals using a small, hand-written runtime library, which is linked at compile time alongside the recompiled CPU code.
+Box Man isn't a fully self-contained static recompiler. It focuses mainly on statically recompiling the CPU i.e. the actual instruction stream the game executes. Apart from CPU, Game Boy contains other hardware components like PPU, APU, timer and joypad. All of them play an important role for actually making the game playable. In Game Boy, memory-mapped I/O is used i.e. CPU communicates with other hardware components by reading and writing to special memory addresses. But none of the aforementioned hardware components are _actually_ part of the instruction stream. Due to this, we implement the behavior of the them using a small runtime library, which is linked at compile time alongside the recompiled CPU code.
 
-Firstly, the ROM's file header is parsed to fetch the metadata such as the game's title, ROM and RAM sizes, and additional checksums for integrity. After that, the control-flow analysis is done to recover the structure of the game's code. Starting from known entry points, which include the cartridge's boot address and the fixed interrupt vector addresses, Box Man recursively walks through the code, splitting into different blocks at every branch, call, and return. Anything which wasn't encountered by this recursive walk is treated as data rather than code. This differentiation in data and code helps in figuring out whether real instructions are present and where graphics data is present.
-
-After the basic blocks are generated, each one of them is lowered into LLVM IR, where the entire game loop is represented as a single function. Instructions that try to target hardware peripheral specific addresses are interrupted by the runtime libraries to tasks such as rendering the graphics, taking the input from the keyboard, playing the sound, etc.
+Firstly, the ROM (or cartridge) file header is parsed to fetch the metadata such as the game's title, ROM and RAM size, and checksums for integrity. After that, control-flow analysis is done to recover the structure of the game's code. Starting from known entry points, which include the cartridge's boot address and the fixed interrupt vector address. Box Man recursively walks through the code, splitting into different basic blocks at every branch, call, and return. Anything which wasn't encountered by this recursive walk is treated as data rather than code. After the basic blocks are generated, each one of them is lowered into LLVM IR, where the entire game loop is represented as a single function. Instructions which try to interact with other hardware components using memory-mapped I/O are processed by the runtime library under the hood for tasks such as rendering the game state, taking the input from keyboard, playing sound, etc.
 
 #figure(
   diagram(
@@ -61,7 +59,7 @@ After the basic blocks are generated, each one of them is lowered into LLVM IR, 
     node((0, 1), [ROM loader]),
     edge((0, 1), (0, 2), "-|>"),
 
-    node((0, 2), [*Decoder*: decodes opcodes into a descriptor table]),
+    node((0, 2), [*Decoder*: Decodes opcodes into a descriptor table]),
     edge((0, 2), (0, 3), "-|>"),
 
     node((0, 3), [*Analyzer*: Builds CFG, separates code from data]),
