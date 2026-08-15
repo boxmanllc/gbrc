@@ -1,18 +1,11 @@
 package rom
 
 import (
+	"fmt"
 	"os"
 )
 
 type CartridgeType int
-
-type Rom struct {
-	Title         string
-	Cgb           bool
-	CartridgeType CartridgeType
-	RomSize       int
-	RamSize       int
-}
 
 var (
 	RomOnly        CartridgeType = 0x00
@@ -21,7 +14,39 @@ var (
 	MBC1RAMBattery CartridgeType = 0x03
 	MBC2           CartridgeType = 0x05
 	MBC2Battery    CartridgeType = 0x06
+
+	CartridgeTypeNameMapping = map[CartridgeType]string{
+		RomOnly:        "ROM ONLY",
+		MBC1:           "MBC1",
+		MBC1RAM:        "MBC1+RAM",
+		MBC1RAMBattery: "MBC1+RAM+BATTERY",
+		MBC2:           "MBC2",
+		MBC2Battery:    "MBC2+BATTERY",
+	}
 )
+
+type Rom struct {
+	Title         string
+	Cgb           bool
+	CartridgeType CartridgeType
+	RomSize       int
+	RamSize       int
+	RomVersion    int
+}
+
+func (r *Rom) String() string {
+	return fmt.Sprintf(`ROM Information:
+  Title: %s
+  MBC Type: %s
+  ROM Size: %.2f KiB
+  RAM Size: %.2f KiB
+  CGB Support: %t
+  ROM Version: %d`,
+		r.Title, CartridgeTypeNameMapping[r.CartridgeType],
+		(float64(r.RomSize) / 1024), (float64(r.RamSize) / 1024),
+		r.Cgb, r.RomVersion,
+	)
+}
 
 func Parse(romFilePath string) (*Rom, error) {
 	bytes, err := os.ReadFile(romFilePath)
@@ -49,11 +74,14 @@ func Parse(romFilePath string) (*Rom, error) {
 		ramSize = 64 * 1024
 	}
 
+	romVersion := int(bytes[0x014C])
+
 	return &Rom{
 		Title:         title,
 		Cgb:           cgb,
 		CartridgeType: cartridgeType,
 		RomSize:       romSize,
 		RamSize:       ramSize,
+		RomVersion:    romVersion,
 	}, nil
 }
