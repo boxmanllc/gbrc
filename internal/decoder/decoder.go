@@ -7,6 +7,7 @@ import (
 
 type InstructionType int
 type Reg8 int
+type Reg16 int
 
 const (
 	NOP InstructionType = iota
@@ -29,6 +30,12 @@ const (
 	LD_HL_DEC_A
 	LD_A_HL_INC
 	LD_HL_INC_A
+	LD_R16_NN
+	LD_NN_SP
+	LD_SP_HL
+	PUSH_R16
+	POP_R16
+	LD_HL_SP_E
 	UNKNOWN
 )
 
@@ -43,12 +50,21 @@ const (
 	Reg8A
 )
 
+const (
+	Reg16BC Reg16 = iota
+	Reg16DE
+	Reg16HL
+	Reg16SP
+	Reg16AF
+)
+
 type Instruction struct {
 	InstructionType InstructionType
 	Length          uint8
 	MCycles         uint8
 	Reg8Src         Reg8
 	Reg8Dest        Reg8
+	Reg16           Reg16
 	Imm8Bit         uint8
 	Imm16Bit        uint16
 }
@@ -181,6 +197,49 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = LD_HL_INC_A
 		instr.Length = 1
 		instr.MCycles = 2
+	case 0x01, 0x11, 0x21, 0x31:
+		instr.InstructionType = LD_R16_NN
+		instr.Length = 3
+		instr.MCycles = 3
+		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+		instr.Imm16Bit = utils.MergeBytes(d.rom.Read(addr+1), d.rom.Read(addr+2))
+	case 0x08:
+		instr.InstructionType = LD_NN_SP
+		instr.Length = 3
+		instr.MCycles = 5
+		instr.Imm16Bit = utils.MergeBytes(d.rom.Read(addr+1), d.rom.Read(addr+2))
+	case 0xF9:
+		instr.InstructionType = LD_SP_HL
+		instr.Length = 1
+		instr.MCycles = 2
+	case 0xC5, 0xD5, 0xE5, 0xF5:
+		instr.InstructionType = PUSH_R16
+		instr.Length = 1
+		instr.MCycles = 4
+
+		reg16 := Reg16((opcode >> 4) & 0x03)
+		if opcode == 0xF5 { // PUSH AF
+			reg16 = Reg16AF
+		}
+
+		instr.Reg16 = reg16
+	case 0xC1, 0xD1, 0xE1, 0xF1:
+		instr.InstructionType = POP_R16
+		instr.Length = 1
+		instr.MCycles = 3
+
+		reg16 := Reg16((opcode >> 4) & 0x03)
+		if opcode == 0xF1 { // POP AF
+			reg16 = Reg16AF
+		}
+
+		instr.Reg16 = reg16
+	case 0xF8:
+		instr.InstructionType = LD_HL_SP_E
+		instr.Length = 2
+		instr.MCycles = 3
+		instr.Imm8Bit = d.rom.Read(addr + 1)
+
 	default:
 		instr.InstructionType = UNKNOWN
 	}
