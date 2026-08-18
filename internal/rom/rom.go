@@ -32,6 +32,8 @@ type Rom struct {
 	RomSize       int
 	RamSize       int
 	RomVersion    int
+
+	data []uint8
 }
 
 func (r *Rom) String() string {
@@ -83,5 +85,10 @@ func Parse(romFilePath string) (*Rom, error) {
 		RomSize:       romSize,
 		RamSize:       ramSize,
 		RomVersion:    romVersion,
+		data:          bytes,
 	}, nil
+}
+
+func (r *Rom) Read(addr uint16) uint8 {
+	return r.data[addr]
 }
