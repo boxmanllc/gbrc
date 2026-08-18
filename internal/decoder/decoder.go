@@ -68,6 +68,10 @@ const (
 	SCF
 	DAA
 	CPL
+	INC_R16
+	DEC_R16
+	ADD_HL_R16
+	ADD_SP_E
 	UNKNOWN
 )
 
@@ -427,6 +431,26 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = CPL
 		instr.Length = 1
 		instr.MCycles = 1
+	case 0x03, 0x13, 0x23, 0x33:
+		instr.InstructionType = INC_R16
+		instr.Length = 1
+		instr.MCycles = 2
+		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+	case 0x0B, 0x1B, 0x2B, 0x3B:
+		instr.InstructionType = DEC_R16
+		instr.Length = 1
+		instr.MCycles = 2
+		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+	case 0x09, 0x19, 0x29, 0x39:
+		instr.InstructionType = ADD_HL_R16
+		instr.Length = 1
+		instr.MCycles = 2
+		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+	case 0xE8:
+		instr.InstructionType = ADD_SP_E
+		instr.Length = 2
+		instr.MCycles = 4
+		instr.Imm8Bit = d.rom.Read(addr + 1)
 	default:
 		instr.InstructionType = UNKNOWN
 	}
