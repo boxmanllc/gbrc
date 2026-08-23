@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"iter"
+
 	"github.com/0xmukesh/boxman/internal/rom"
 	"github.com/0xmukesh/boxman/internal/utils"
 )
@@ -142,6 +144,7 @@ const (
 )
 
 type Instruction struct {
+	Address             uint16
 	InstructionType     InstructionType
 	Length              uint8
 	BaseMCycles         uint8
@@ -154,6 +157,7 @@ type Instruction struct {
 	IsCbPrefixed        bool
 	JumpCondition       JumpCondition
 	CallFunctionAddress uint8
+	BitOpIndex          uint8
 }
 
 type Decoder struct {
@@ -166,31 +170,35 @@ func NewDecoder(rom *rom.Rom) *Decoder {
 	}
 }
 
-func (d *Decoder) Decode() []*Instruction {
-	addr := uint16(0x0150)
-	instrs := []*Instruction{}
+func (d *Decoder) Decode() iter.Seq[*Instruction] {
+	return func(yield func(*Instruction) bool) {
+		addr := uint16(0x0150)
 
-	for addr < uint16(d.rom.RomSize) {
-		opcode := d.rom.Read(addr)
+		for addr < uint16(d.rom.RomSize) {
+			opcode := d.rom.Read(addr)
 
-		var instr *Instruction
-		if opcode == 0xCB {
-			opcode = d.rom.Read(addr)
-			instr = d.decodeCbPrefixedOpcode(opcode)
-		} else {
-			instr = d.decodeOpcode(opcode, addr)
+			var instr *Instruction
+			if opcode == 0xCB {
+				opcode = d.rom.Read(addr + 1)
+				instr = d.decodeCbPrefixedOpcode(opcode, addr)
+			} else {
+				instr = d.decodeOpcode(opcode, addr)
+			}
+
+			if !yield(instr) {
+				return
+			}
+
+			addr += uint16(instr.Length)
 		}
-
-		instrs = append(instrs, instr)
-		addr += uint16(instr.Length)
 	}
-
-	return instrs
 }
 
 func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
-	instr := &Instruction{}
-	instr.IsCbPrefixed = false
+	instr := &Instruction{
+		Address:      addr,
+		IsCbPrefixed: false,
+	}
 
 	switch opcode {
 	case 0x00:
@@ -605,8 +613,9 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 	return instr
 }
 
-func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8) *Instruction {
+func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction {
 	instr := &Instruction{
+		Address:      addr,
 		IsCbPrefixed: true,
 	}
 
@@ -634,15 +643,16 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8) *Instruction {
 		group = narrowBlockOps[opcode>>3]
 	} else {
 		group = wideBlockOps[(opcode-0x40)/0x30]
+		instr.BitOpIndex = (opcode >> 3) & 0x07
 	}
 
 	if reg == 0x06 {
 		instr.InstructionType = group[1]
-		instr.Length = 2
+		instr.Length = 1
 		instr.BaseMCycles = 4
 	} else {
 		instr.InstructionType = group[0]
-		instr.Length = 2
+		instr.Length = 1
 		instr.BaseMCycles = 2
 		instr.Reg8Src = Reg8(reg)
 	}

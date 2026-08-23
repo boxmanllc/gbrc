@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/0xmukesh/boxman/internal/decoder"
 	"github.com/0xmukesh/boxman/internal/rom"
@@ -23,11 +22,14 @@ func main() {
 		log.Fatalf("failed to parse rom file: %s", err)
 	}
 
-	decoder := decoder.NewDecoder(rom)
-	instrs := decoder.Decode()
+	fmt.Println(rom)
+	d := decoder.NewDecoder(rom)
 
-	for _, instr := range instrs {
-		fmt.Printf("%+v\n", instr)
-		fmt.Println(strings.Repeat("=", 10))
+	for instr := range d.Decode() {
+		if instr.InstructionType == decoder.UNKNOWN {
+			log.Fatalf("found unknown instruction at 0x%04X", instr.Address)
+		} else {
+			fmt.Printf("%+v\n", instr)
+		}
 	}
 }
