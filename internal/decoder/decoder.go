@@ -72,6 +72,32 @@ const (
 	DEC_R16
 	ADD_HL_R16
 	ADD_SP_E
+	RLCA
+	RRCA
+	RLA
+	RRA
+	CB_RLC_R8
+	CB_RLC_HL
+	CB_RRC_R8
+	CB_RRC_HL
+	CB_RL_R8
+	CB_RL_HL
+	CB_RR_R8
+	CB_RR_HL
+	CB_SLA_R8
+	CB_SLA_HL
+	CB_SRA_R8
+	CB_SRA_HL
+	CB_SWAP_R8
+	CB_SWAP_HL
+	CB_SRL_R8
+	CB_SRL_HL
+	CB_BIT_R8
+	CB_BIT_HL
+	CB_RES_R8
+	CB_RES_HL
+	CB_SET_R8
+	CB_SET_HL
 	UNKNOWN
 )
 
@@ -103,6 +129,7 @@ type Instruction struct {
 	Reg16           Reg16
 	Imm8Bit         uint8
 	Imm16Bit        uint16
+	IsCbPrefixed    bool
 }
 
 type Decoder struct {
@@ -121,7 +148,15 @@ func (d *Decoder) Decode() []*Instruction {
 
 	for addr < uint16(d.rom.RomSize) {
 		opcode := d.rom.Read(addr)
-		instr := d.decodeOpcode(opcode, addr)
+
+		var instr *Instruction
+		if opcode == 0xCB {
+			opcode = d.rom.Read(addr)
+			instr = d.decodeCbPrefixedOpcode(opcode)
+		} else {
+			instr = d.decodeOpcode(opcode, addr)
+		}
+
 		instrs = append(instrs, instr)
 		addr += uint16(instr.Length)
 	}
@@ -131,6 +166,7 @@ func (d *Decoder) Decode() []*Instruction {
 
 func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 	instr := &Instruction{}
+	instr.IsCbPrefixed = false
 
 	switch opcode {
 	case 0x00:
@@ -451,8 +487,69 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 2
 		instr.MCycles = 4
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+	case 0x07:
+		instr.InstructionType = RLCA
+		instr.Length = 1
+		instr.MCycles = 1
+	case 0x0F:
+		instr.InstructionType = RRCA
+		instr.Length = 1
+		instr.MCycles = 1
+	case 0x17:
+		instr.InstructionType = RLA
+		instr.Length = 1
+		instr.MCycles = 1
+	case 0x1F:
+		instr.InstructionType = RRA
+		instr.Length = 1
+		instr.MCycles = 1
 	default:
 		instr.InstructionType = UNKNOWN
+	}
+
+	return instr
+}
+
+func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8) *Instruction {
+	instr := &Instruction{
+		IsCbPrefixed: true,
+	}
+
+	var narrowBlockOps = [][2]InstructionType{
+		{CB_RLC_R8, CB_RLC_HL},
+		{CB_RRC_R8, CB_RRC_HL},
+		{CB_RL_R8, CB_RL_HL},
+		{CB_RR_R8, CB_RR_HL},
+		{CB_SLA_R8, CB_SLA_HL},
+		{CB_SRA_R8, CB_SRA_HL},
+		{CB_SWAP_R8, CB_SWAP_HL},
+		{CB_SRL_R8, CB_SRL_HL},
+	}
+
+	var wideBlockOps = [][2]InstructionType{
+		{CB_BIT_R8, CB_BIT_HL},
+		{CB_RES_R8, CB_RES_HL},
+		{CB_SET_R8, CB_SET_HL},
+	}
+
+	reg := opcode & 0x07
+	var group [2]InstructionType
+
+	if opcode < 0x40 {
+		group = narrowBlockOps[opcode>>3]
+	} else {
+		group = wideBlockOps[(opcode-0x40)/0x30]
+	}
+
+	if reg == 0x06 {
+		instr.InstructionType = group[1]
+		instr.Length = 2
+		instr.MCycles = 4
+	} else {
+		instr.InstructionType = group[0]
+		instr.Length = 2
+		instr.MCycles = 2
+		instr.Reg8Src = Reg8(reg)
 	}
 
 	return instr
