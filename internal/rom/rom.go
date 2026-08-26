@@ -90,5 +90,9 @@ func Parse(romFilePath string) (*Rom, error) {
 }
 
 func (r *Rom) Read(addr uint16) uint8 {
+	if int(addr) >= len(r.data) {
+		return 0
+	}
+
 	return r.data[addr]
 }

@@ -1,8 +1,6 @@
 package decoder
 
 import (
-	"iter"
-
 	"github.com/0xmukesh/boxman/internal/rom"
 	"github.com/0xmukesh/boxman/internal/utils"
 )
@@ -156,7 +154,7 @@ type Instruction struct {
 	Imm16Bit            uint16
 	IsCbPrefixed        bool
 	JumpCondition       JumpCondition
-	CallFunctionAddress uint8
+	CallFunctionAddress uint16
 	BitOpIndex          uint8
 }
 
@@ -170,28 +168,18 @@ func NewDecoder(rom *rom.Rom) *Decoder {
 	}
 }
 
-func (d *Decoder) Decode() iter.Seq[*Instruction] {
-	return func(yield func(*Instruction) bool) {
-		addr := uint16(0x0150)
+func (d *Decoder) DecodeAt(addr uint16) *Instruction {
+	opcode := d.rom.Read(addr)
 
-		for addr < uint16(d.rom.RomSize) {
-			opcode := d.rom.Read(addr)
-
-			var instr *Instruction
-			if opcode == 0xCB {
-				opcode = d.rom.Read(addr + 1)
-				instr = d.decodeCbPrefixedOpcode(opcode, addr)
-			} else {
-				instr = d.decodeOpcode(opcode, addr)
-			}
-
-			if !yield(instr) {
-				return
-			}
-
-			addr += uint16(instr.Length)
-		}
+	var instr *Instruction
+	if opcode == 0xCB {
+		opcode = d.rom.Read(addr + 1)
+		instr = d.decodeCbPrefixedOpcode(opcode, addr)
+	} else {
+		instr = d.decodeOpcode(opcode, addr)
 	}
+
+	return instr
 }
 
 func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
@@ -594,7 +582,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = RST_N
 		instr.Length = 1
 		instr.BaseMCycles = 4
-		instr.CallFunctionAddress = [8]uint8{
+		instr.CallFunctionAddress = [8]uint16{
 			0x00, 0x08, 0x10, 0x18,
 			0x20, 0x28, 0x30, 0x38,
 		}[(opcode>>3)&0x07]
@@ -642,7 +630,7 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 	if opcode < 0x40 {
 		group = narrowBlockOps[opcode>>3]
 	} else {
-		group = wideBlockOps[(opcode-0x40)/0x30]
+		group = wideBlockOps[(opcode-0x40)/0x40]
 		instr.BitOpIndex = (opcode >> 3) & 0x07
 	}
 
