@@ -636,11 +636,11 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 
 	if reg == 0x06 {
 		instr.InstructionType = group[1]
-		instr.Length = 1
+		instr.Length = 2
 		instr.BaseMCycles = 4
 	} else {
 		instr.InstructionType = group[0]
-		instr.Length = 1
+		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Reg8Src = Reg8(reg)
 	}

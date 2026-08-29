@@ -26,7 +26,9 @@ func main() {
 	decoder := decoder.NewDecoder(rom)
 	analyzer := analyzer.NewAnalyzer(decoder)
 
-	for addr := range analyzer.FindReachableAddresses() {
-		fmt.Printf("0x%04X\n", addr)
+	blocks := analyzer.AnalyzeBlocks()
+
+	for _, block := range blocks {
+		fmt.Printf("%04X-%04X\n", block.Start, block.End)
 	}
 }
