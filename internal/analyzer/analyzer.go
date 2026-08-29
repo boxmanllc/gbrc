@@ -11,9 +11,10 @@ type Analyzer struct {
 }
 
 type Block struct {
-	Start      uint16
-	End        uint16
-	Successors []*decoder.Instruction
+	Start        uint16
+	End          uint16
+	Instructions []*decoder.Instruction
+	Successors   []uint16
 }
 
 const (
@@ -31,6 +32,8 @@ const (
 	SERIAL    uint16 = 0x58
 	ROM_ENTRY uint16 = 0x100
 	USER_CODE uint16 = 0x150
+
+	ROM_END = 0x8000
 )
 
 var seeds = []uint16{
@@ -47,46 +50,34 @@ func NewAnalyzer(decoder *decoder.Decoder) *Analyzer {
 }
 
 func (a *Analyzer) AnalyzeBlocks() []*Block {
-	queue := slices.Clone(seeds)
-	claimed := make([]bool, 0x8000)
+	ownedBy := make([]*Block, ROM_END)
+	blockStart := make([]bool, ROM_END)
 	blocks := []*Block{}
 
-	for len(queue) != 0 {
+	var queue []uint16
+	for _, seed := range seeds {
+		queue = enqueue(queue, blockStart, seed)
+	}
+
+	for len(queue) > 0 {
 		start := queue[0]
 		queue = queue[1:]
 
-		if start >= 0x8000 || claimed[start] {
+		if ownedBy[start] != nil {
+			if ownedBy[start].Start == start {
+				continue
+			}
+
+			a.cutBlock(ownedBy, ownedBy[start], start)
+		}
+
+		block := a.collectBlock(ownedBy, blockStart, start)
+		if block == nil {
 			continue
 		}
 
-		block := &Block{Start: start}
-		addr := start
-
-		for addr < 0x8000 && !claimed[addr] {
-			instr := a.decoder.DecodeAt(addr)
-			if instr.InstructionType == decoder.UNKNOWN || instr.Length == 0 {
-				block.End = addr
-				break
-			}
-
-			block.End = addr + uint16(instr.Length) - 1
-			for i := addr; i <= block.End && addr < 0x8000; i++ {
-				claimed[i] = true
-			}
-
-			if a.isBlockTerminator(instr) {
-				block.Successors = a.successors(addr, instr)
-
-				for _, succ := range block.Successors {
-					if !claimed[succ.Address] {
-						queue = append(queue, succ.Address)
-					}
-				}
-
-				break
-			}
-
-			addr += uint16(instr.Length)
+		for _, succ := range block.Successors {
+			queue = enqueue(queue, blockStart, succ)
 		}
 
 		blocks = append(blocks, block)
@@ -99,43 +90,72 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 	return blocks
 }
 
-func (a *Analyzer) successors(addr uint16, instr *decoder.Instruction) []*decoder.Instruction {
-	next := addr + uint16(instr.Length)
+func (a *Analyzer) collectBlock(ownedBy []*Block, blockStart []bool, start uint16) *Block {
+	block := &Block{Start: start}
+	addr := start
 
-	var targets []uint16
-	switch instr.InstructionType {
-	case decoder.JP_NN:
-		targets = []uint16{instr.Imm16Bit}
-	case decoder.JP_CC_NN:
-		targets = []uint16{instr.Imm16Bit, next}
-	case decoder.JR_E:
-		targets = []uint16{a.calculateRelativeJumpTarget(addr, instr)}
-	case decoder.JR_CC_E:
-		targets = []uint16{a.calculateRelativeJumpTarget(addr, instr), next}
-	case decoder.CALL_NN, decoder.CALL_CC_NN:
-		targets = []uint16{instr.Imm16Bit, next}
-	case decoder.RET_CC:
-		targets = []uint16{next}
-	case decoder.RST_N:
-		targets = []uint16{instr.CallFunctionAddress, next}
-	case decoder.JP_HL, decoder.RET, decoder.RETI:
-		targets = nil
-	}
-
-	successors := []*decoder.Instruction{}
-	for _, t := range targets {
-		if t >= 0x8000 {
-			continue
+	for addr < ROM_END {
+		if addr != start && (ownedBy[addr] != nil || blockStart[addr]) {
+			block.End = addr - 1
+			block.Successors = []uint16{addr}
+			return block
 		}
 
-		instr := a.decoder.DecodeAt(t)
-		successors = append(successors, instr)
+		instr := a.decoder.DecodeAt(addr)
+		if instr.InstructionType == decoder.UNKNOWN || instr.Length == 0 {
+			if len(block.Instructions) == 0 {
+				return nil
+			}
+			block.End = addr
+			return block
+		}
+
+		block.Instructions = append(block.Instructions, instr)
+		block.End = addr + uint16(instr.Length) - 1
+		claimBytes(ownedBy, block, addr, block.End)
+
+		if a.terminates(instr) {
+			block.Successors = a.successors(addr, instr)
+			return block
+		}
+
+		addr += uint16(instr.Length)
 	}
 
-	return successors
+	return block
 }
 
-func (a *Analyzer) isBlockTerminator(instr *decoder.Instruction) bool {
+func (a *Analyzer) cutBlock(ownedBy []*Block, block *Block, addr uint16) {
+	for i := addr; i <= block.End; i++ {
+		ownedBy[i] = nil
+	}
+
+	for i := 0; i < len(block.Instructions); i++ {
+		if block.Instructions[i].Address >= addr {
+			block.Instructions = block.Instructions[:i]
+			break
+		}
+	}
+
+	block.End = addr - 1
+	block.Successors = []uint16{addr}
+}
+
+func claimBytes(ownedBy []*Block, block *Block, from, to uint16) {
+	for i := from; i <= to; i++ {
+		ownedBy[i] = block
+	}
+}
+
+func enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
+	if addr < ROM_END && !blockStart[addr] {
+		blockStart[addr] = true
+		return append(queue, addr)
+	}
+	return queue
+}
+
+func (a *Analyzer) terminates(instr *decoder.Instruction) bool {
 	switch instr.InstructionType {
 	case decoder.JP_NN, decoder.JP_HL, decoder.JR_E,
 		decoder.RET, decoder.RETI,
@@ -147,6 +167,40 @@ func (a *Analyzer) isBlockTerminator(instr *decoder.Instruction) bool {
 	}
 }
 
-func (a *Analyzer) calculateRelativeJumpTarget(addr uint16, instr *decoder.Instruction) uint16 {
+func (a *Analyzer) successors(addr uint16, instr *decoder.Instruction) []uint16 {
+	next := addr + uint16(instr.Length)
+
+	successors := []uint16{}
+	add := func(t uint16) {
+		if t < ROM_END {
+			successors = append(successors, t)
+		}
+	}
+
+	switch instr.InstructionType {
+	case decoder.JP_NN:
+		add(instr.Imm16Bit)
+	case decoder.JP_CC_NN:
+		add(instr.Imm16Bit)
+		add(next)
+	case decoder.JR_E:
+		add(a.relative(addr, instr))
+	case decoder.JR_CC_E:
+		add(a.relative(addr, instr))
+		add(next)
+	case decoder.CALL_NN, decoder.CALL_CC_NN:
+		add(instr.Imm16Bit)
+		add(next)
+	case decoder.RET_CC:
+		add(next)
+	case decoder.RST_N:
+		add(instr.CallFunctionAddress)
+		add(next)
+	}
+
+	return successors
+}
+
+func (a *Analyzer) relative(addr uint16, instr *decoder.Instruction) uint16 {
 	return uint16(int16(addr) + int16(instr.Length) + int16(int8(instr.Imm8Bit)))
 }

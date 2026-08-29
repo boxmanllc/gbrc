@@ -159,19 +159,25 @@ type Instruction struct {
 }
 
 type Decoder struct {
-	rom *rom.Rom
+	rom   *rom.Rom
+	cache map[uint16]*Instruction
 }
 
 func NewDecoder(rom *rom.Rom) *Decoder {
 	return &Decoder{
-		rom: rom,
+		rom:   rom,
+		cache: make(map[uint16]*Instruction),
 	}
 }
 
 func (d *Decoder) DecodeAt(addr uint16) *Instruction {
+	instr, ok := d.cache[addr]
+	if ok {
+		return instr
+	}
+
 	opcode := d.rom.Read(addr)
 
-	var instr *Instruction
 	if opcode == 0xCB {
 		opcode = d.rom.Read(addr + 1)
 		instr = d.decodeCbPrefixedOpcode(opcode, addr)
@@ -179,6 +185,7 @@ func (d *Decoder) DecodeAt(addr uint16) *Instruction {
 		instr = d.decodeOpcode(opcode, addr)
 	}
 
+	d.cache[addr] = instr
 	return instr
 }
 
