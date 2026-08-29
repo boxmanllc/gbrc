@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"slices"
+
 	"github.com/0xmukesh/boxman/internal/decoder"
 )
 
@@ -27,7 +29,6 @@ const (
 	LCD_STAT  uint16 = 0x48
 	TIMER     uint16 = 0x50
 	SERIAL    uint16 = 0x58
-	JOYPAD    uint16 = 0x60
 	ROM_ENTRY uint16 = 0x100
 	USER_CODE uint16 = 0x150
 )
@@ -36,7 +37,7 @@ var seeds = []uint16{
 	RST_00, RST_08, RST_10, RST_18,
 	RST_20, RST_28, RST_30, RST_38,
 	VBLANK, LCD_STAT, TIMER, SERIAL,
-	JOYPAD, ROM_ENTRY, USER_CODE,
+	ROM_ENTRY, USER_CODE,
 }
 
 func NewAnalyzer(decoder *decoder.Decoder) *Analyzer {
@@ -46,23 +47,22 @@ func NewAnalyzer(decoder *decoder.Decoder) *Analyzer {
 }
 
 func (a *Analyzer) AnalyzeBlocks() []*Block {
-	queue := seeds
+	queue := slices.Clone(seeds)
+	claimed := make([]bool, 0x8000)
 	blocks := []*Block{}
-	visited := make(map[uint16]bool)
 
 	for len(queue) != 0 {
 		start := queue[0]
 		queue = queue[1:]
 
-		if start >= 0x8000 || visited[start] {
+		if start >= 0x8000 || claimed[start] {
 			continue
 		}
 
 		block := &Block{Start: start}
-		visited[start] = true
 		addr := start
 
-		for addr < 0x8000 {
+		for addr < 0x8000 && !claimed[addr] {
 			instr := a.decoder.DecodeAt(addr)
 			if instr.InstructionType == decoder.UNKNOWN || instr.Length == 0 {
 				block.End = addr
@@ -70,12 +70,15 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 			}
 
 			block.End = addr + uint16(instr.Length) - 1
+			for i := addr; i <= block.End && addr < 0x8000; i++ {
+				claimed[i] = true
+			}
 
 			if a.isBlockTerminator(instr) {
 				block.Successors = a.successors(addr, instr)
 
 				for _, succ := range block.Successors {
-					if !visited[succ.Address] {
+					if !claimed[succ.Address] {
 						queue = append(queue, succ.Address)
 					}
 				}
@@ -88,6 +91,10 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 
 		blocks = append(blocks, block)
 	}
+
+	slices.SortFunc(blocks, func(x, y *Block) int {
+		return int(x.Start) - int(y.Start)
+	})
 
 	return blocks
 }
