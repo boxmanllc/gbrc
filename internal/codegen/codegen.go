@@ -1,6 +1,8 @@
 package codegen
 
 import (
+	"os"
+
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
 	"github.com/llir/llvm/ir/types"
@@ -30,6 +32,6 @@ func (cg *Codegen) setupRegisters() {
 	cg.module.NewGlobalDef("gb_sp", constant.NewInt(types.I16, 0))
 }
 
-func (cg *Codegen) IR() string {
-	return cg.module.String()
+func (cg *Codegen) WriteTo(filepath string) {
+	os.WriteFile(filepath, []byte(cg.module.String()), 0644)
 }
