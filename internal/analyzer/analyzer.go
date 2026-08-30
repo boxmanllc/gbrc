@@ -42,7 +42,7 @@ var seeds = []uint16{
 	ROM_ENTRY, USER_CODE,
 }
 
-func NewAnalyzer(decoder *decoder.Decoder) *Analyzer {
+func New(decoder *decoder.Decoder) *Analyzer {
 	return &Analyzer{
 		decoder: decoder,
 	}
@@ -113,7 +113,7 @@ func (a *Analyzer) collectBlock(ownedBy []*Block, blockStart []bool, start uint1
 		block.End = addr + uint16(instr.Length) - 1
 		claimBytes(ownedBy, block, addr, block.End)
 
-		if a.terminates(instr) {
+		if IsBlockTerminator(instr) {
 			block.Successors = a.successors(addr, instr)
 			return block
 		}
@@ -152,18 +152,6 @@ func enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
 		return append(queue, addr)
 	}
 	return queue
-}
-
-func (a *Analyzer) terminates(instr *decoder.Instruction) bool {
-	switch instr.InstructionType {
-	case decoder.JP_NN, decoder.JP_HL, decoder.JR_E,
-		decoder.RET, decoder.RETI,
-		decoder.JP_CC_NN, decoder.JR_CC_E, decoder.RET_CC,
-		decoder.CALL_NN, decoder.CALL_CC_NN, decoder.RST_N:
-		return true
-	default:
-		return false
-	}
 }
 
 func (a *Analyzer) successors(addr uint16, instr *decoder.Instruction) []uint16 {

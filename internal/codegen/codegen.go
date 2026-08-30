@@ -12,11 +12,11 @@ import (
 )
 
 type Codegen struct {
-	module     *ir.Module
-	main       *ir.Func
-	entrypoint *ir.Block
-	blocks     []*analyzer.Block
-	opcodes    map[decoder.InstructionType]*ir.Func
+	module *ir.Module
+	main   *ir.Func
+
+	instrFuncs map[string]*ir.Func
+	irBlocks   map[uint16]*ir.Block
 
 	aReg, bReg, cReg, dReg, eReg, hReg, lReg *ir.Global
 	zFlag, nFlag, hFlag, cFlag               *ir.Global
@@ -24,29 +24,40 @@ type Codegen struct {
 	cycles                                   *ir.Global
 }
 
-func NewCodegen(blocks []*analyzer.Block) (*Codegen, error) {
+func New(blocks []*analyzer.Block) *Codegen {
 	cg := &Codegen{
-		opcodes: make(map[decoder.InstructionType]*ir.Func),
+		instrFuncs: make(map[string]*ir.Func),
+		irBlocks:   make(map[uint16]*ir.Block),
 	}
-	cg.blocks = blocks
+
 	cg.module = ir.NewModule()
 	cg.main = cg.module.NewFunc("main", types.I32)
-	cg.entrypoint = cg.main.NewBlock("entry")
-	cg.entrypoint.NewRet(constant.NewInt(types.I32, 0))
+	cg.emitGlobals()
 
-	cg.setupGlobalDefs()
-	if err := cg.setupRomEntry(); err != nil {
-		return nil, err
+	for _, block := range blocks {
+		if block.Start < 0x100 {
+			continue
+		}
+
+		cg.emitBlock(block)
 	}
 
-	return cg, nil
+	for _, block := range blocks {
+		if block.Start < 0x100 {
+			continue
+		}
+
+		cg.joinBlocks(block)
+	}
+
+	return cg
 }
 
 func (cg *Codegen) WriteTo(filepath string) {
 	os.WriteFile(filepath, []byte(cg.module.String()), 0644)
 }
 
-func (cg *Codegen) setupGlobalDefs() {
+func (cg *Codegen) emitGlobals() {
 	cg.aReg = cg.module.NewGlobalDef("a_reg", constant.NewInt(types.I8, 0))
 	cg.bReg = cg.module.NewGlobalDef("b_reg", constant.NewInt(types.I8, 0))
 	cg.cReg = cg.module.NewGlobalDef("c_reg", constant.NewInt(types.I8, 0))
@@ -63,32 +74,22 @@ func (cg *Codegen) setupGlobalDefs() {
 	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 }
 
-func (cg *Codegen) setupRomEntry() error {
-	var romEntryBlock *analyzer.Block // block which starts from $100
-	for _, block := range cg.blocks {
-		if block.Start == 0x100 {
-			romEntryBlock = block
-			break
-		}
-	}
-
-	if romEntryBlock == nil {
-		return fmt.Errorf("failed to find rom entry block")
-	}
-
-	cg.processBlock(romEntryBlock, cg.entrypoint)
-	return nil
+func (cg *Codegen) emitBlock(block *analyzer.Block) {
+	entry := cg.main.NewBlock(fmt.Sprintf("block_%04X", block.Start))
+	cg.emitCalls(block, entry)
+	cg.irBlocks[block.Start] = entry
 }
 
-func (cg *Codegen) processBlock(block *analyzer.Block, irBlock *ir.Block) {
+func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) {
 	for _, instr := range block.Instructions {
-		fn, ok := cg.opcodes[instr.InstructionType]
-		if !ok {
-			fn = cg.setupInstruction(instr)
+		// code for block terminator instructions are generated inline
+		if analyzer.IsBlockTerminator(instr) {
+			continue
 		}
 
+		fn := cg.emitInstruction(instr)
 		if fn == nil {
-			fmt.Printf("not processing %d instr type", instr.InstructionType)
+			fmt.Printf("not processing %d instr type\n", instr.InstructionType)
 			continue
 		}
 
@@ -96,14 +97,37 @@ func (cg *Codegen) processBlock(block *analyzer.Block, irBlock *ir.Block) {
 	}
 }
 
-func (cg *Codegen) setupInstruction(instr *decoder.Instruction) *ir.Func {
-	var fn *ir.Func
+func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *ir.Func {
+	fn, ok := cg.instrFuncs[instr.Mnemonic]
+	if ok {
+		return fn
+	}
 
 	switch instr.InstructionType {
 	case decoder.NOP:
-		fn = cg.nop()
+		fn = cg.nop(instr)
+	case decoder.LD_R8_R8:
+		fn = cg.ld_r8_r8(instr)
 	}
 
-	cg.opcodes[instr.InstructionType] = fn
+	cg.instrFuncs[instr.Mnemonic] = fn
 	return fn
+}
+
+func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
+	irBlock, ok := cg.irBlocks[block.Start]
+	if !ok {
+		return fmt.Errorf("can't find equivalent ir block for 0x%04X block", block.Start)
+	}
+
+	lastInstr := block.Instructions[len(block.Instructions)-1]
+
+	switch lastInstr.InstructionType {
+	case decoder.JP_NN:
+		cg.jp_nn(lastInstr, irBlock)
+	default:
+		irBlock.NewRet(constant.NewInt(types.I32, 0))
+	}
+
+	return nil
 }

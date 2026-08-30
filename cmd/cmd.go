@@ -3,6 +3,7 @@ package cmd
 import (
 	"flag"
 	"log"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -13,7 +14,8 @@ import (
 )
 
 var (
-	romFilePath, irFilePath string
+	romFilePath, irFilePath, outFilePath string
+	toOptimize, toCompile                bool
 )
 
 func Run() {
@@ -24,28 +26,48 @@ func Run() {
 		log.Fatalf("failed to parse rom file: %s", err)
 	}
 
-	decoder := decoder.NewDecoder(rom)
-	analyzer := analyzer.NewAnalyzer(decoder)
+	decoder := decoder.New(rom)
+	analyzer := analyzer.New(decoder)
 	blocks := analyzer.AnalyzeBlocks()
-
-	codegen, err := codegen.NewCodegen(blocks)
-	if err != nil {
-		log.Fatalf("failed to codegen: %s", err)
-	}
+	codegen := codegen.New(blocks)
 
 	codegen.WriteTo(irFilePath)
+
+	if toOptimize {
+		if _, err = exec.Command("opt", "-O2", "-S", irFilePath, "-o", irFilePath).Output(); err != nil {
+			log.Fatalf("failed to optimize ir: %s", err)
+		}
+	}
+
+	if toCompile {
+		if _, err := exec.Command("clang", "-O0", "-g", irFilePath, "-o", outFilePath).Output(); err != nil {
+			log.Fatalf("failed to compile ir: %s", err)
+		}
+	}
 }
 
 func parseFlags() {
 	flag.StringVar(&romFilePath, "rom", "", "path where rom file is present")
 	flag.StringVar(&irFilePath, "ir", "", "path where llvm ir should be saved to")
+	flag.StringVar(&outFilePath, "out", "", "path where output binary would be saved to")
+	noOptFlag := flag.Bool("no-optimize", false, "disable ir optimization")
+	noCompileFlag := flag.Bool("no-compile", false, "emit ir only")
 	flag.Parse()
 
 	if romFilePath == "" {
 		log.Fatalf("missing rom file path")
 	}
 
+	base := strings.TrimSuffix(romFilePath, filepath.Ext(romFilePath))
+
 	if irFilePath == "" {
-		irFilePath = strings.TrimSuffix(romFilePath, filepath.Ext(romFilePath)) + ".ll"
+		irFilePath = base + ".ll"
 	}
+
+	if outFilePath == "" {
+		outFilePath = base
+	}
+
+	toOptimize = !*noOptFlag
+	toCompile = !*noCompileFlag
 }
