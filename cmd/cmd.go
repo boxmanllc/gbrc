@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"path/filepath"
 	"strings"
@@ -27,12 +26,11 @@ func Run() {
 
 	decoder := decoder.NewDecoder(rom)
 	analyzer := analyzer.NewAnalyzer(decoder)
-	codegen := codegen.NewCodegen()
-
 	blocks := analyzer.AnalyzeBlocks()
 
-	for _, block := range blocks {
-		fmt.Printf("0x%04X-0x%04X\n", block.Start, block.End)
+	codegen, err := codegen.NewCodegen(blocks)
+	if err != nil {
+		log.Fatalf("failed to codegen: %s", err)
 	}
 
 	codegen.WriteTo(irFilePath)
@@ -48,6 +46,6 @@ func parseFlags() {
 	}
 
 	if irFilePath == "" {
-		irFilePath = strings.TrimSuffix(romFilePath, filepath.Ext(romFilePath))
+		irFilePath = strings.TrimSuffix(romFilePath, filepath.Ext(romFilePath)) + ".ll"
 	}
 }

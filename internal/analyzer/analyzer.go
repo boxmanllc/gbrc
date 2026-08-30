@@ -32,8 +32,7 @@ const (
 	SERIAL    uint16 = 0x58
 	ROM_ENTRY uint16 = 0x100
 	USER_CODE uint16 = 0x150
-
-	ROM_END = 0x8000
+	ROM_END   uint16 = 0x8000
 )
 
 var seeds = []uint16{

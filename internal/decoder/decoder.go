@@ -11,7 +11,7 @@ type Reg16 int
 type JumpCondition int
 
 const (
-	NOP InstructionType = iota
+	NOP InstructionType = iota // 0
 	LD_R8_R8
 	LD_R8_N
 	LD_R8_HL
@@ -21,7 +21,8 @@ const (
 	LD_A_DE
 	LD_BC_A
 	LD_DE_A
-	LD_A_NN
+	LD_A_NN // 10
+
 	LD_NN_A
 	LDH_A_C
 	LDH_C_A
@@ -31,7 +32,8 @@ const (
 	LD_HL_DEC_A
 	LD_A_HL_INC
 	LD_HL_INC_A
-	LD_R16_NN
+	LD_R16_NN // 20
+
 	LD_NN_SP
 	LD_SP_HL
 	PUSH_R16
@@ -41,7 +43,8 @@ const (
 	ADD_HL
 	ADD_N
 	ADC_R8
-	ADC_HL
+	ADC_HL // 30
+
 	ADC_N
 	SUB_R8
 	SUB_HL
@@ -51,7 +54,8 @@ const (
 	SBC_N
 	CP_R8
 	CP_HL
-	CP_N
+	CP_N // 40
+
 	INC_R8
 	INC_HL
 	DEC_R8
@@ -61,7 +65,8 @@ const (
 	AND_N
 	OR_R8
 	OR_HL
-	OR_N
+	OR_N // 50
+
 	XOR_R8
 	XOR_HL
 	XOR_N
@@ -71,7 +76,8 @@ const (
 	CPL
 	INC_R16
 	DEC_R16
-	ADD_HL_R16
+	ADD_HL_R16 // 60
+
 	ADD_SP_E
 	RLCA
 	RRCA
@@ -81,7 +87,8 @@ const (
 	JP_HL
 	JP_CC_NN
 	JR_E
-	JR_CC_E
+	JR_CC_E // 70
+
 	CALL_NN
 	CALL_CC_NN
 	RET
@@ -91,7 +98,8 @@ const (
 	DI
 	EI
 	CB_RLC_R8
-	CB_RLC_HL
+	CB_RLC_HL // 80
+
 	CB_RRC_R8
 	CB_RRC_HL
 	CB_RL_R8
@@ -101,7 +109,8 @@ const (
 	CB_SLA_R8
 	CB_SLA_HL
 	CB_SRA_R8
-	CB_SRA_HL
+	CB_SRA_HL // 90
+
 	CB_SWAP_R8
 	CB_SWAP_HL
 	CB_SRL_R8
@@ -111,7 +120,8 @@ const (
 	CB_RES_R8
 	CB_RES_HL
 	CB_SET_R8
-	CB_SET_HL
+	CB_SET_HL // 100
+
 	UNKNOWN
 )
 
