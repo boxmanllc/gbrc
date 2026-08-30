@@ -9,6 +9,7 @@ import (
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
 	"github.com/llir/llvm/ir/types"
+	"github.com/llir/llvm/ir/value"
 )
 
 type Codegen struct {
@@ -22,9 +23,16 @@ type Codegen struct {
 	zFlag, nFlag, hFlag, cFlag               *ir.Global
 	pc, sp                                   *ir.Global
 	cycles                                   *ir.Global
+
+	dumpFunc *ir.Func
 }
 
-func New(blocks []*analyzer.Block) *Codegen {
+type Function struct {
+	irFunc *ir.Func
+	args   []value.Value
+}
+
+func New(blocks []*analyzer.Block, toFlagDump bool) *Codegen {
 	cg := &Codegen{
 		instrFuncs: make(map[string]*ir.Func),
 		irBlocks:   make(map[uint16]*ir.Block),
@@ -32,14 +40,18 @@ func New(blocks []*analyzer.Block) *Codegen {
 
 	cg.module = ir.NewModule()
 	cg.main = cg.module.NewFunc("main", types.I32)
+
 	cg.emitGlobals()
+	if toFlagDump {
+		cg.setupFlagDumpFunc()
+	}
 
 	for _, block := range blocks {
 		if block.Start < 0x100 {
 			continue
 		}
 
-		cg.emitBlock(block)
+		cg.emitBlock(block, toFlagDump)
 	}
 
 	for _, block := range blocks {
@@ -74,9 +86,14 @@ func (cg *Codegen) emitGlobals() {
 	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 }
 
-func (cg *Codegen) emitBlock(block *analyzer.Block) {
+func (cg *Codegen) emitBlock(block *analyzer.Block, toFlagDump bool) {
 	entry := cg.main.NewBlock(fmt.Sprintf("block_%04X", block.Start))
 	cg.emitCalls(block, entry)
+
+	if toFlagDump {
+		entry.NewCall(cg.dumpFunc)
+	}
+
 	cg.irBlocks[block.Start] = entry
 }
 
@@ -93,25 +110,37 @@ func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) {
 			continue
 		}
 
-		irBlock.NewCall(fn)
+		irBlock.NewCall(fn.irFunc, fn.args...)
 	}
 }
 
-func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *ir.Func {
-	fn, ok := cg.instrFuncs[instr.Mnemonic]
-	if ok {
-		return fn
+func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *Function {
+	// build up the actual ir function
+	irFunc, ok := cg.instrFuncs[instr.Mnemonic]
+	if !ok {
+		switch instr.InstructionType {
+		case decoder.NOP:
+			irFunc = cg.nop(instr)
+		case decoder.LD_R8_R8:
+			irFunc = cg.ld_r8_r8(instr)
+		case decoder.LD_R8_N:
+			irFunc = cg.ld_r8_n(instr)
+		}
+
+		cg.instrFuncs[instr.Mnemonic] = irFunc
 	}
 
+	// build up the function arguments
+	args := []value.Value{}
 	switch instr.InstructionType {
-	case decoder.NOP:
-		fn = cg.nop(instr)
-	case decoder.LD_R8_R8:
-		fn = cg.ld_r8_r8(instr)
+	case decoder.LD_R8_N:
+		args = append(args, constant.NewInt(types.I8, int64(instr.Imm8Bit)))
 	}
 
-	cg.instrFuncs[instr.Mnemonic] = fn
-	return fn
+	return &Function{
+		irFunc: irFunc,
+		args:   args,
+	}
 }
 
 func (cg *Codegen) joinBlocks(block *analyzer.Block) error {

@@ -9,18 +9,37 @@ import (
 )
 
 func (cg *Codegen) nop(instr *decoder.Instruction) *ir.Func {
-	fn, entry := cg.scaffoldInstrFunc(instr)
+	fn := cg.module.NewFunc(cg.mnemonicToFuncName(instr.Mnemonic), types.Void)
+	entry := fn.NewBlock("entry")
+	entry.NewRet(nil)
+
 	cg.increaseCycles(instr, entry)
 	return fn
 }
 
 func (cg *Codegen) ld_r8_r8(instr *decoder.Instruction) *ir.Func {
-	fn, entry := cg.scaffoldInstrFunc(instr)
+	fn := cg.module.NewFunc(cg.mnemonicToFuncName(instr.Mnemonic), types.Void)
+	entry := fn.NewBlock("entry")
+	entry.NewRet(nil)
+
 	destReg := cg.findReg8GlobalDef(instr.Reg8Dest)
 	srcReg := cg.findReg8GlobalDef(instr.Reg8Src)
 
-	destValue := entry.NewLoad(types.I8, destReg)
-	entry.NewStore(destValue, srcReg)
+	srcValue := entry.NewLoad(types.I8, srcReg)
+	entry.NewStore(srcValue, destReg)
+	cg.increaseCycles(instr, entry)
+
+	return fn
+}
+
+func (cg *Codegen) ld_r8_n(instr *decoder.Instruction) *ir.Func {
+	nParam := ir.NewParam("n", types.I8)
+	fn := cg.module.NewFunc(cg.mnemonicToFuncName(instr.Mnemonic), types.Void, nParam)
+	entry := fn.NewBlock("entry")
+	entry.NewRet(nil)
+
+	destReg := cg.findReg8GlobalDef(instr.Reg8Dest)
+	entry.NewStore(nParam, destReg)
 	cg.increaseCycles(instr, entry)
 
 	return fn
