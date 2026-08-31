@@ -218,6 +218,44 @@ func (cg *Codegen) ld_hl_sp_e(instr *decoder.Instruction) *ir.Func {
 	})
 }
 
+func (cg *Codegen) push_r16(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		r16 := cg.findReg16GlobalDefs(instr.Reg16, b)
+		sp := cg.findReg16GlobalDefs(decoder.Reg16SP, b)
+		spVal := cg.readReg16(b, sp)
+
+		spVal = b.NewSub(spVal, constant.NewInt(types.I16, 1))
+		cg.updateReg16(b, sp, spVal)
+		cg.updateMemory(b, spVal, r16.msb)
+
+		spVal = b.NewSub(spVal, constant.NewInt(types.I16, 1))
+		cg.updateReg16(b, sp, spVal)
+		cg.updateMemory(b, spVal, r16.lsb)
+	})
+}
+
+func (cg *Codegen) pop_r16(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		r16 := cg.findReg16GlobalDefs(instr.Reg16, b)
+		sp := cg.findReg16GlobalDefs(decoder.Reg16SP, b)
+		spVal := cg.readReg16(b, sp)
+
+		lsb := cg.readMemory(b, spVal)
+		spVal = b.NewAdd(spVal, constant.NewInt(types.I16, 1))
+		cg.updateReg16(b, sp, spVal)
+
+		msb := cg.readMemory(b, spVal)
+		spVal = b.NewAdd(spVal, constant.NewInt(types.I16, 1))
+		cg.updateReg16(b, sp, spVal)
+
+		lsb16 := b.NewZExt(lsb, types.I16)
+		msb16 := b.NewZExt(msb, types.I16)
+		msbShifted := b.NewShl(msb16, constant.NewInt(types.I16, 8))
+		newVal := b.NewOr(msbShifted, lsb16)
+		cg.updateReg16(b, r16, newVal)
+	})
+}
+
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 	toBlock, ok := cg.irBlocks[instr.Imm16Bit]

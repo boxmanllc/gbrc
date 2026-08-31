@@ -79,7 +79,7 @@ func (cg *Codegen) findReg16GlobalDefs(reg16 decoder.Reg16, irBlock *ir.Block) R
 	case decoder.Reg16AF:
 		return Reg16Store{isSplitUp: true, hasFlagReg: true, msb: cg.aReg, lsb: cg.buildFReg(irBlock)}
 	case decoder.Reg16SP:
-		return Reg16Store{val: cg.sp}
+		return Reg16Store{isSplitUp: false, val: cg.sp}
 	default:
 		panic(fmt.Sprintf("cannot find llvm global def for %d reg16 type", reg16))
 	}

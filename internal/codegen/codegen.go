@@ -181,6 +181,10 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*Function, error
 			irFunc = cg.ld_sp_hl(instr)
 		case decoder.LD_HL_SP_E:
 			irFunc = cg.ld_hl_sp_e(instr)
+		case decoder.PUSH_R16:
+			irFunc = cg.push_r16(instr)
+		case decoder.POP_R16:
+			irFunc = cg.pop_r16(instr)
 		default:
 			return nil, fmt.Errorf("cannot emit opcode function ir. unknown instruction type: %d", instr.InstructionType)
 		}
