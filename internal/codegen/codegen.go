@@ -143,6 +143,18 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*Function, error
 			irFunc = cg.ld_r8_hl(instr)
 		case decoder.LD_HL_R8:
 			irFunc = cg.ld_hl_r8(instr)
+		case decoder.LD_HL_N:
+			irFunc = cg.ld_hl_n(instr)
+		case decoder.LD_A_BC:
+			irFunc = cg.ld_a_bc(instr)
+		case decoder.LD_A_DE:
+			irFunc = cg.ld_a_de(instr)
+		case decoder.LD_BC_A:
+			irFunc = cg.ld_bc_a(instr)
+		case decoder.LD_DE_A:
+			irFunc = cg.ld_de_a(instr)
+		case decoder.LD_A_NN:
+			irFunc = cg.ld_a_nn(instr)
 		default:
 			return nil, fmt.Errorf("cannot emit opcode function ir. unknown instruction type: %d", instr.InstructionType)
 		}
@@ -153,8 +165,10 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*Function, error
 	// then, build up the function's arguments
 	args := []value.Value{}
 	switch instr.InstructionType {
-	case decoder.LD_R8_N:
+	case decoder.LD_R8_N, decoder.LD_HL_N:
 		args = []value.Value{constant.NewInt(types.I8, int64(instr.Imm8Bit))}
+	case decoder.LD_A_NN:
+		args = []value.Value{constant.NewInt(types.I16, int64(instr.Imm16Bit))}
 	}
 
 	return &Function{

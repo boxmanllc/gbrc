@@ -26,6 +26,24 @@ func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block)
 	irBlock.NewStore(cyclesInc, cg.cycles)
 }
 
+func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block)) *ir.Func {
+	fn := cg.module.NewFunc(mnemonicToFuncName(instr.Mnemonic), types.Void)
+	entry := fn.NewBlock("entry")
+	build(entry)
+	cg.increaseCycles(instr, entry)
+	entry.NewRet(nil)
+	return fn
+}
+
+func (cg *Codegen) buildParamFunc(instr *decoder.Instruction, param *ir.Param, build func(*ir.Block, *ir.Param)) *ir.Func {
+	fn := cg.module.NewFunc(mnemonicToFuncName(instr.Mnemonic), types.Void, param)
+	entry := fn.NewBlock("entry")
+	build(entry, param)
+	cg.increaseCycles(instr, entry)
+	entry.NewRet(nil)
+	return fn
+}
+
 func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
 	idx := irBlock.NewZExt(addr, types.I64)
@@ -40,14 +58,13 @@ func (cg *Codegen) storeMemory(irBlock *ir.Block, addr value.Value, val value.Va
 	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
-func (cg *Codegen) loadHL(irBlock *ir.Block) value.Value {
-	h := irBlock.NewLoad(types.I8, cg.hReg)
-	l := irBlock.NewLoad(types.I8, cg.lReg)
-	h16 := irBlock.NewZExt(h, types.I16)
-	l16 := irBlock.NewZExt(l, types.I16)
-	hShifted := irBlock.NewShl(h16, constant.NewInt(types.I16, 8))
-	hl := irBlock.NewOr(hShifted, l16)
-	return hl
+func (cg *Codegen) loadReg16(irBlock *ir.Block, msb, lsb value.Value) value.Value {
+	msbVal := irBlock.NewLoad(types.I8, msb)
+	lsbVal := irBlock.NewLoad(types.I8, lsb)
+	msb16 := irBlock.NewZExt(msbVal, types.I16)
+	lsb16 := irBlock.NewZExt(lsbVal, types.I16)
+	msbShifted := irBlock.NewShl(msb16, constant.NewInt(types.I16, 8))
+	return irBlock.NewOr(msbShifted, lsb16)
 }
 
 func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
