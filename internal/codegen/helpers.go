@@ -44,6 +44,11 @@ func (cg *Codegen) buildParamFunc(instr *decoder.Instruction, param *ir.Param, b
 	return fn
 }
 
+func (cg *Codegen) calculateHighPageAddress(irBlock *ir.Block, val value.Value) value.Value {
+	val16 := irBlock.NewZExt(val, types.I16)
+	return irBlock.NewAdd(constant.NewInt(types.I16, 0xFF00), val16)
+}
+
 func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
 	idx := irBlock.NewZExt(addr, types.I64)
@@ -58,13 +63,22 @@ func (cg *Codegen) storeMemory(irBlock *ir.Block, addr value.Value, val value.Va
 	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
-func (cg *Codegen) loadReg16(irBlock *ir.Block, msb, lsb value.Value) value.Value {
+func (cg *Codegen) readReg16(irBlock *ir.Block, msb, lsb value.Value) value.Value {
 	msbVal := irBlock.NewLoad(types.I8, msb)
 	lsbVal := irBlock.NewLoad(types.I8, lsb)
 	msb16 := irBlock.NewZExt(msbVal, types.I16)
 	lsb16 := irBlock.NewZExt(lsbVal, types.I16)
 	msbShifted := irBlock.NewShl(msb16, constant.NewInt(types.I16, 8))
 	return irBlock.NewOr(msbShifted, lsb16)
+}
+
+func (cg *Codegen) updateReg16(irBlock *ir.Block, reg16, msb, lsb value.Value) {
+	msb16 := irBlock.NewLShr(reg16, constant.NewInt(types.I16, 8))
+	msbVal := irBlock.NewTrunc(msb16, types.I8)
+	lsbVal := irBlock.NewTrunc(reg16, types.I8)
+
+	irBlock.NewStore(msbVal, msb)
+	irBlock.NewStore(lsbVal, lsb)
 }
 
 func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
