@@ -15,7 +15,8 @@ import (
 
 var (
 	romFilePath, irFilePath, outFilePath string
-	toFlagDump, toOptimize, toCompile    bool
+	debugFlag                            bool
+	toOptimize, toCompile                bool
 )
 
 func Run() {
@@ -29,9 +30,15 @@ func Run() {
 	decoder := decoder.New(rom)
 	analyzer := analyzer.New(decoder)
 	blocks := analyzer.AnalyzeBlocks()
-	codegen := codegen.New(blocks, toFlagDump)
 
-	codegen.WriteTo(irFilePath)
+	codegen, err := codegen.New(blocks, debugFlag)
+	if err != nil {
+		log.Fatalf("failed to generate ir: %s", err)
+	}
+
+	if err := codegen.WriteTo(irFilePath); err != nil {
+		log.Fatalf("failed to write ir: %s", err)
+	}
 
 	if toOptimize {
 		if _, err = exec.Command("opt", "-O2", "-S", irFilePath, "-o", irFilePath).Output(); err != nil {
@@ -50,7 +57,7 @@ func parseFlags() {
 	flag.StringVar(&romFilePath, "rom", "", "path where rom file is present")
 	flag.StringVar(&irFilePath, "ir", "", "path where llvm ir should be saved to")
 	flag.StringVar(&outFilePath, "out", "", "path where output binary would be saved to")
-	flag.BoolVar(&toFlagDump, "flag-dump", false, "print out flag and cycle variable values after every block executation")
+	flag.BoolVar(&debugFlag, "debug", false, "print out register, flags and cycles after executation of every block")
 	noOptFlag := flag.Bool("no-optimize", false, "disable ir optimization")
 	noCompileFlag := flag.Bool("no-compile", false, "emit ir only")
 	flag.Parse()

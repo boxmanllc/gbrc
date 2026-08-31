@@ -16,8 +16,8 @@ type Codegen struct {
 	module *ir.Module
 	main   *ir.Func
 
-	instrFuncs map[string]*ir.Func
-	irBlocks   map[uint16]*ir.Block
+	instrFuncs map[string]*ir.Func  // mapping mneomnic to opcode's ir function
+	irBlocks   map[uint16]*ir.Block // mapping block start address to ir block element
 
 	ram                                      *ir.Global
 	cycles                                   *ir.Global
@@ -25,7 +25,8 @@ type Codegen struct {
 	zFlag, nFlag, hFlag, cFlag               *ir.Global
 	pc, sp                                   *ir.Global
 
-	dumpFunc *ir.Func
+	debug     bool
+	debugFunc *ir.Func
 }
 
 type Function struct {
@@ -33,7 +34,7 @@ type Function struct {
 	args   []value.Value
 }
 
-func New(blocks []*analyzer.Block, toFlagDump bool) *Codegen {
+func New(blocks []*analyzer.Block, debug bool) (*Codegen, error) {
 	cg := &Codegen{
 		instrFuncs: make(map[string]*ir.Func),
 		irBlocks:   make(map[uint16]*ir.Block),
@@ -41,33 +42,39 @@ func New(blocks []*analyzer.Block, toFlagDump bool) *Codegen {
 
 	cg.module = ir.NewModule()
 	cg.main = cg.module.NewFunc("main", types.I32)
+	cg.debug = debug
 
 	cg.emitGlobals()
-	if toFlagDump {
-		cg.setupFlagDumpFunc()
+	if cg.debug {
+		cg.setupDebugFunc()
 	}
 
+	// NOTE: we're only considering blocks starting from rom entry atm
+	// FIXME: need to consider blocks before rom entry which includes various interrupt handlers
+	var blocksToProcess []*analyzer.Block
 	for _, block := range blocks {
-		if block.Start < 0x100 {
-			continue
+		if block.Start >= analyzer.ROM_ENTRY {
+			blocksToProcess = append(blocksToProcess, block)
 		}
-
-		cg.emitBlock(block, toFlagDump)
 	}
 
-	for _, block := range blocks {
-		if block.Start < 0x100 {
-			continue
+	for _, block := range blocksToProcess {
+		if err := cg.emitBlock(block); err != nil {
+			return nil, err
 		}
-
-		cg.joinBlocks(block)
 	}
 
-	return cg
+	for _, block := range blocksToProcess {
+		if err := cg.joinBlocks(block); err != nil {
+			return nil, err
+		}
+	}
+
+	return cg, nil
 }
 
-func (cg *Codegen) WriteTo(filepath string) {
-	os.WriteFile(filepath, []byte(cg.module.String()), 0644)
+func (cg *Codegen) WriteTo(filepath string) error {
+	return os.WriteFile(filepath, []byte(cg.module.String()), 0644)
 }
 
 func (cg *Codegen) emitGlobals() {
@@ -88,36 +95,41 @@ func (cg *Codegen) emitGlobals() {
 	cg.sp = cg.module.NewGlobalDef("sp", constant.NewInt(types.I16, 0))
 }
 
-func (cg *Codegen) emitBlock(block *analyzer.Block, toFlagDump bool) {
+func (cg *Codegen) emitBlock(block *analyzer.Block) error {
 	entry := cg.main.NewBlock(fmt.Sprintf("block_%04X", block.Start))
-	cg.emitCalls(block, entry)
+	if err := cg.emitCalls(block, entry); err != nil {
+		return err
+	}
 
-	if toFlagDump {
-		entry.NewCall(cg.dumpFunc)
+	if cg.debug {
+		entry.NewCall(cg.debugFunc)
 	}
 
 	cg.irBlocks[block.Start] = entry
+	return nil
 }
 
-func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) {
+func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) error {
 	for _, instr := range block.Instructions {
-		// code for block terminator instructions are generated inline
+		// for block terminators, the code is placed inline at the end of the block
 		if analyzer.IsBlockTerminator(instr) {
 			continue
 		}
 
-		fn := cg.emitInstruction(instr)
-		if fn == nil {
-			fmt.Printf("not processing %d instr type\n", instr.InstructionType)
-			continue
+		fn, err := cg.emitInstruction(instr)
+		if err != nil {
+			return err
 		}
 
 		irBlock.NewCall(fn.irFunc, fn.args...)
 	}
+
+	return nil
 }
 
-func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *Function {
-	// build up the actual ir function
+func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*Function, error) {
+	// first, build up the opcode's function
+	// if it is already present then reuse it
 	irFunc, ok := cg.instrFuncs[instr.Mnemonic]
 	if !ok {
 		switch instr.InstructionType {
@@ -131,12 +143,14 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *Function {
 			irFunc = cg.ld_r8_hl(instr)
 		case decoder.LD_HL_R8:
 			irFunc = cg.ld_hl_r8(instr)
+		default:
+			return nil, fmt.Errorf("cannot emit opcode function ir. unknown instruction type: %d", instr.InstructionType)
 		}
 
 		cg.instrFuncs[instr.Mnemonic] = irFunc
 	}
 
-	// build up the function arguments
+	// then, build up the function's arguments
 	args := []value.Value{}
 	switch instr.InstructionType {
 	case decoder.LD_R8_N:
@@ -146,7 +160,7 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *Function {
 	return &Function{
 		irFunc: irFunc,
 		args:   args,
-	}
+	}, nil
 }
 
 func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
@@ -159,7 +173,9 @@ func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
 
 	switch lastInstr.InstructionType {
 	case decoder.JP_NN:
-		cg.jp_nn(lastInstr, irBlock)
+		if err := cg.jp_nn(lastInstr, irBlock); err != nil {
+			return err
+		}
 	default:
 		irBlock.NewRet(constant.NewInt(types.I32, 0))
 	}

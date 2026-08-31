@@ -55,7 +55,7 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 
 	var queue []uint16
 	for _, seed := range seeds {
-		queue = enqueue(queue, blockStart, seed)
+		queue = a.enqueue(queue, blockStart, seed)
 	}
 
 	for len(queue) > 0 {
@@ -76,7 +76,7 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 		}
 
 		for _, succ := range block.Successors {
-			queue = enqueue(queue, blockStart, succ)
+			queue = a.enqueue(queue, blockStart, succ)
 		}
 
 		blocks = append(blocks, block)
@@ -111,10 +111,10 @@ func (a *Analyzer) collectBlock(ownedBy []*Block, blockStart []bool, start uint1
 
 		block.Instructions = append(block.Instructions, instr)
 		block.End = addr + uint16(instr.Length) - 1
-		claimBytes(ownedBy, block, addr, block.End)
+		a.claimBytes(ownedBy, block, addr, block.End)
 
 		if IsBlockTerminator(instr) {
-			block.Successors = a.successors(addr, instr)
+			block.Successors = a.findSuccessors(addr, instr)
 			return block
 		}
 
@@ -140,13 +140,13 @@ func (a *Analyzer) cutBlock(ownedBy []*Block, block *Block, addr uint16) {
 	block.Successors = []uint16{addr}
 }
 
-func claimBytes(ownedBy []*Block, block *Block, from, to uint16) {
+func (a *Analyzer) claimBytes(ownedBy []*Block, block *Block, from, to uint16) {
 	for i := from; i <= to; i++ {
 		ownedBy[i] = block
 	}
 }
 
-func enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
+func (a *Analyzer) enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
 	if addr < ROM_END && !blockStart[addr] {
 		blockStart[addr] = true
 		return append(queue, addr)
@@ -154,7 +154,7 @@ func enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
 	return queue
 }
 
-func (a *Analyzer) successors(addr uint16, instr *decoder.Instruction) []uint16 {
+func (a *Analyzer) findSuccessors(addr uint16, instr *decoder.Instruction) []uint16 {
 	next := addr + uint16(instr.Length)
 
 	successors := []uint16{}
@@ -171,9 +171,9 @@ func (a *Analyzer) successors(addr uint16, instr *decoder.Instruction) []uint16 
 		add(instr.Imm16Bit)
 		add(next)
 	case decoder.JR_E:
-		add(a.relative(addr, instr))
+		add(a.calculateRelativeJumpAddress(addr, instr))
 	case decoder.JR_CC_E:
-		add(a.relative(addr, instr))
+		add(a.calculateRelativeJumpAddress(addr, instr))
 		add(next)
 	case decoder.CALL_NN, decoder.CALL_CC_NN:
 		add(instr.Imm16Bit)
@@ -188,6 +188,6 @@ func (a *Analyzer) successors(addr uint16, instr *decoder.Instruction) []uint16 
 	return successors
 }
 
-func (a *Analyzer) relative(addr uint16, instr *decoder.Instruction) uint16 {
+func (a *Analyzer) calculateRelativeJumpAddress(addr uint16, instr *decoder.Instruction) uint16 {
 	return uint16(int16(addr) + int16(instr.Length) + int16(int8(instr.Imm8Bit)))
 }

@@ -16,7 +16,7 @@ var (
 	mnemonicPat = regexp.MustCompile(`[ ,()]`)
 )
 
-func (cg *Codegen) mnemonicToFuncName(mnemonic string) string {
+func mnemonicToFuncName(mnemonic string) string {
 	return mnemonicPat.ReplaceAllString(mnemonic, "_")
 }
 
@@ -26,18 +26,18 @@ func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block)
 	irBlock.NewStore(cyclesInc, cg.cycles)
 }
 
-func (cg *Codegen) loadMemory(irBlock *ir.Block, addr value.Value) value.Value {
+func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
 	idx := irBlock.NewZExt(addr, types.I64)
-	ptr := irBlock.NewGetElementPtr(types.I8, ramp, idx)
-	return irBlock.NewLoad(types.I8, ptr)
+	return irBlock.NewGetElementPtr(types.I8, ramp, idx)
+}
+
+func (cg *Codegen) loadMemory(irBlock *ir.Block, addr value.Value) value.Value {
+	return irBlock.NewLoad(types.I8, cg.getRamPtr(irBlock, addr))
 }
 
 func (cg *Codegen) storeMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
-	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
-	idx := irBlock.NewZExt(addr, types.I64)
-	ptr := irBlock.NewGetElementPtr(types.I8, ramp, idx)
-	irBlock.NewStore(val, ptr)
+	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
 func (cg *Codegen) loadHL(irBlock *ir.Block) value.Value {
@@ -71,7 +71,7 @@ func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
 	}
 }
 
-func (cg *Codegen) setupFlagDumpFunc() {
+func (cg *Codegen) setupDebugFunc() {
 	printfFunc := cg.module.NewFunc("printf", types.I32, ir.NewParam("", types.NewPointer(types.I8)))
 	printfFunc.Sig.Variadic = true
 
@@ -80,9 +80,9 @@ func (cg *Codegen) setupFlagDumpFunc() {
 	fmtGlobal.Linkage = enum.LinkagePrivate
 	fmtGlobal.Immutable = true
 
-	dumpFn := cg.module.NewFunc("dump", types.Void)
-	cg.dumpFunc = dumpFn
-	entry := dumpFn.NewBlock("entry")
+	debugFunc := cg.module.NewFunc("debug", types.Void)
+	cg.debugFunc = debugFunc
+	entry := debugFunc.NewBlock("entry")
 
 	aReg := entry.NewLoad(types.I8, cg.aReg)
 	bReg := entry.NewLoad(types.I8, cg.bReg)

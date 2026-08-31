@@ -706,7 +706,7 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 		IsCbPrefixed: true,
 	}
 
-	var narrowBlockOps = [][2]InstructionType{
+	narrowBlockOps := [][2]InstructionType{
 		{CB_RLC_R8, CB_RLC_HL},
 		{CB_RRC_R8, CB_RRC_HL},
 		{CB_RL_R8, CB_RL_HL},
@@ -716,8 +716,7 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 		{CB_SWAP_R8, CB_SWAP_HL},
 		{CB_SRL_R8, CB_SRL_HL},
 	}
-
-	var wideBlockOps = [][2]InstructionType{
+	wideBlockOps := [][2]InstructionType{
 		{CB_BIT_R8, CB_BIT_HL},
 		{CB_RES_R8, CB_RES_HL},
 		{CB_SET_R8, CB_SET_HL},
