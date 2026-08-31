@@ -131,10 +131,26 @@ func (cg *Codegen) buildFReg(irBlock *ir.Block) value.Value {
 	h := irBlock.NewLoad(types.I1, cg.hFlag)
 	c := irBlock.NewLoad(types.I1, cg.cFlag)
 
-	z8 := irBlock.NewSelect(z, constant.NewInt(types.I8, 0x80), constant.NewInt(types.I8, 0x00))
-	n8 := irBlock.NewSelect(n, constant.NewInt(types.I8, 0x40), constant.NewInt(types.I8, 0x00))
-	h8 := irBlock.NewSelect(h, constant.NewInt(types.I8, 0x20), constant.NewInt(types.I8, 0x00))
-	c8 := irBlock.NewSelect(c, constant.NewInt(types.I8, 0x10), constant.NewInt(types.I8, 0x00))
+	z8 := irBlock.NewSelect(
+		z,
+		constant.NewInt(types.I8, 0x80),
+		constant.NewInt(types.I8, 0x00),
+	)
+	n8 := irBlock.NewSelect(
+		n,
+		constant.NewInt(types.I8, 0x40),
+		constant.NewInt(types.I8, 0x00),
+	)
+	h8 := irBlock.NewSelect(
+		h,
+		constant.NewInt(types.I8, 0x20),
+		constant.NewInt(types.I8, 0x00),
+	)
+	c8 := irBlock.NewSelect(
+		c,
+		constant.NewInt(types.I8, 0x10),
+		constant.NewInt(types.I8, 0x00),
+	)
 
 	f := irBlock.NewOr(z8, n8)
 	f = irBlock.NewOr(f, h8)
@@ -144,10 +160,22 @@ func (cg *Codegen) buildFReg(irBlock *ir.Block) value.Value {
 }
 
 func (cg *Codegen) updateFReg(irBlock *ir.Block, val value.Value) {
-	z := irBlock.NewTrunc(irBlock.NewLShr(val, constant.NewInt(types.I8, 7)), types.I1)
-	n := irBlock.NewTrunc(irBlock.NewLShr(val, constant.NewInt(types.I8, 6)), types.I1)
-	h := irBlock.NewTrunc(irBlock.NewLShr(val, constant.NewInt(types.I8, 5)), types.I1)
-	c := irBlock.NewTrunc(irBlock.NewLShr(val, constant.NewInt(types.I8, 4)), types.I1)
+	z := irBlock.NewTrunc(
+		irBlock.NewLShr(val, constant.NewInt(types.I8, 7)),
+		types.I1,
+	)
+	n := irBlock.NewTrunc(
+		irBlock.NewLShr(val, constant.NewInt(types.I8, 6)),
+		types.I1,
+	)
+	h := irBlock.NewTrunc(
+		irBlock.NewLShr(val, constant.NewInt(types.I8, 5)),
+		types.I1,
+	)
+	c := irBlock.NewTrunc(
+		irBlock.NewLShr(val, constant.NewInt(types.I8, 4)),
+		types.I1,
+	)
 
 	irBlock.NewStore(z, cg.zFlag)
 	irBlock.NewStore(n, cg.nFlag)
@@ -204,10 +232,26 @@ func (cg *Codegen) setupDebugFunc() {
 	cFlag := entry.NewLoad(types.I1, cg.cFlag)
 	cycles := entry.NewLoad(types.I32, cg.cycles)
 
-	zChar := entry.NewSelect(zFlag, constant.NewInt(types.I8, 'Z'), constant.NewInt(types.I8, '-'))
-	nChar := entry.NewSelect(nFlag, constant.NewInt(types.I8, 'N'), constant.NewInt(types.I8, '-'))
-	hChar := entry.NewSelect(hFlag, constant.NewInt(types.I8, 'H'), constant.NewInt(types.I8, '-'))
-	cChar := entry.NewSelect(cFlag, constant.NewInt(types.I8, 'C'), constant.NewInt(types.I8, '-'))
+	zChar := entry.NewSelect(
+		zFlag,
+		constant.NewInt(types.I8, 'Z'),
+		constant.NewInt(types.I8, '-'),
+	)
+	nChar := entry.NewSelect(
+		nFlag,
+		constant.NewInt(types.I8, 'N'),
+		constant.NewInt(types.I8, '-'),
+	)
+	hChar := entry.NewSelect(
+		hFlag,
+		constant.NewInt(types.I8, 'H'),
+		constant.NewInt(types.I8, '-'),
+	)
+	cChar := entry.NewSelect(
+		cFlag,
+		constant.NewInt(types.I8, 'C'),
+		constant.NewInt(types.I8, '-'),
+	)
 
 	zChar32 := entry.NewZExt(zChar, types.I32)
 	nChar32 := entry.NewZExt(nChar, types.I32)
