@@ -19,10 +19,11 @@ type Codegen struct {
 	instrFuncs map[string]*ir.Func
 	irBlocks   map[uint16]*ir.Block
 
+	ram                                      *ir.Global
+	cycles                                   *ir.Global
 	aReg, bReg, cReg, dReg, eReg, hReg, lReg *ir.Global
 	zFlag, nFlag, hFlag, cFlag               *ir.Global
 	pc, sp                                   *ir.Global
-	cycles                                   *ir.Global
 
 	dumpFunc *ir.Func
 }
@@ -70,6 +71,8 @@ func (cg *Codegen) WriteTo(filepath string) {
 }
 
 func (cg *Codegen) emitGlobals() {
+	cg.ram = cg.module.NewGlobalDef("ram", constant.NewZeroInitializer(types.NewArray(0x10000, types.I8)))
+	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 	cg.aReg = cg.module.NewGlobalDef("a_reg", constant.NewInt(types.I8, 0))
 	cg.bReg = cg.module.NewGlobalDef("b_reg", constant.NewInt(types.I8, 0))
 	cg.cReg = cg.module.NewGlobalDef("c_reg", constant.NewInt(types.I8, 0))
@@ -83,7 +86,6 @@ func (cg *Codegen) emitGlobals() {
 	cg.cFlag = cg.module.NewGlobalDef("c_flag", constant.NewBool(false)) // carry flag
 	cg.pc = cg.module.NewGlobalDef("pc", constant.NewInt(types.I16, 0))
 	cg.sp = cg.module.NewGlobalDef("sp", constant.NewInt(types.I16, 0))
-	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 }
 
 func (cg *Codegen) emitBlock(block *analyzer.Block, toFlagDump bool) {
@@ -125,6 +127,10 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *Function {
 			irFunc = cg.ld_r8_r8(instr)
 		case decoder.LD_R8_N:
 			irFunc = cg.ld_r8_n(instr)
+		case decoder.LD_R8_HL:
+			irFunc = cg.ld_r8_hl(instr)
+		case decoder.LD_HL_R8:
+			irFunc = cg.ld_hl_r8(instr)
 		}
 
 		cg.instrFuncs[instr.Mnemonic] = irFunc
@@ -134,7 +140,7 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) *Function {
 	args := []value.Value{}
 	switch instr.InstructionType {
 	case decoder.LD_R8_N:
-		args = append(args, constant.NewInt(types.I8, int64(instr.Imm8Bit)))
+		args = []value.Value{constant.NewInt(types.I8, int64(instr.Imm8Bit))}
 	}
 
 	return &Function{

@@ -9,6 +9,7 @@ import (
 	"github.com/llir/llvm/ir/constant"
 	"github.com/llir/llvm/ir/enum"
 	"github.com/llir/llvm/ir/types"
+	"github.com/llir/llvm/ir/value"
 )
 
 var (
@@ -23,6 +24,30 @@ func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block)
 	cycles := irBlock.NewLoad(types.I32, cg.cycles)
 	cyclesInc := irBlock.NewAdd(cycles, constant.NewInt(types.I32, int64(instr.BaseMCycles)))
 	irBlock.NewStore(cyclesInc, cg.cycles)
+}
+
+func (cg *Codegen) loadMemory(irBlock *ir.Block, addr value.Value) value.Value {
+	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
+	idx := irBlock.NewZExt(addr, types.I64)
+	ptr := irBlock.NewGetElementPtr(types.I8, ramp, idx)
+	return irBlock.NewLoad(types.I8, ptr)
+}
+
+func (cg *Codegen) storeMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
+	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
+	idx := irBlock.NewZExt(addr, types.I64)
+	ptr := irBlock.NewGetElementPtr(types.I8, ramp, idx)
+	irBlock.NewStore(val, ptr)
+}
+
+func (cg *Codegen) loadHL(irBlock *ir.Block) value.Value {
+	h := irBlock.NewLoad(types.I8, cg.hReg)
+	l := irBlock.NewLoad(types.I8, cg.lReg)
+	h16 := irBlock.NewZExt(h, types.I16)
+	l16 := irBlock.NewZExt(l, types.I16)
+	hShifted := irBlock.NewShl(h16, constant.NewInt(types.I16, 8))
+	hl := irBlock.NewOr(hShifted, l16)
+	return hl
 }
 
 func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
