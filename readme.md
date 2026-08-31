@@ -1,3 +1,3 @@
 # gbrc
 
-a LLVM based static recompiler for gameboy DMG-01
+A LLVM based static recompiler for Game Boy DMG-01
