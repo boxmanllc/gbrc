@@ -28,73 +28,73 @@ func (cg *Codegen) ld_r8_n(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_r8_hl(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
-		b.NewStore(cg.loadMemory(b, hl), cg.findReg8GlobalDef(instr.Reg8Dest))
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		b.NewStore(cg.readMemory(b, hl), cg.findReg8GlobalDef(instr.Reg8Dest))
 	})
 }
 
 func (cg *Codegen) ld_hl_r8(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
 		src := b.NewLoad(types.I8, cg.findReg8GlobalDef(instr.Reg8Src))
-		cg.storeMemory(b, hl, src)
+		cg.updateMemory(b, hl, src)
 	})
 }
 
 func (cg *Codegen) ld_hl_n(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
-		cg.storeMemory(b, hl, p)
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		cg.updateMemory(b, hl, p)
 	})
 }
 
 func (cg *Codegen) ld_a_bc(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		bc := cg.readReg16(b, cg.bReg, cg.cReg)
-		b.NewStore(cg.loadMemory(b, bc), cg.aReg)
+		bc := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16BC, b))
+		b.NewStore(cg.readMemory(b, bc), cg.aReg)
 	})
 }
 
 func (cg *Codegen) ld_a_de(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		de := cg.readReg16(b, cg.dReg, cg.eReg)
-		b.NewStore(cg.loadMemory(b, de), cg.aReg)
+		de := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16DE, b))
+		b.NewStore(cg.readMemory(b, de), cg.aReg)
 	})
 }
 
 func (cg *Codegen) ld_bc_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		bc := cg.readReg16(b, cg.bReg, cg.cReg)
+		bc := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16BC, b))
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, bc, a)
+		cg.updateMemory(b, bc, a)
 	})
 }
 
 func (cg *Codegen) ld_de_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		de := cg.readReg16(b, cg.dReg, cg.eReg)
+		de := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16DE, b))
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, de, a)
+		cg.updateMemory(b, de, a)
 	})
 }
 
 func (cg *Codegen) ld_a_nn(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("nn", types.I16), func(b *ir.Block, p *ir.Param) {
-		b.NewStore(cg.loadMemory(b, p), cg.aReg)
+		b.NewStore(cg.readMemory(b, p), cg.aReg)
 	})
 }
 
 func (cg *Codegen) ld_nn_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("nn", types.I16), func(b *ir.Block, p *ir.Param) {
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, p, a)
+		cg.updateMemory(b, p, a)
 	})
 }
 
 func (cg *Codegen) ldh_a_c(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
 		addr := cg.calculateHighPageAddress(b, b.NewLoad(types.I8, cg.cReg))
-		b.NewStore(cg.loadMemory(b, addr), cg.aReg)
+		b.NewStore(cg.readMemory(b, addr), cg.aReg)
 	})
 }
 
@@ -102,14 +102,14 @@ func (cg *Codegen) ldh_c_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
 		addr := cg.calculateHighPageAddress(b, b.NewLoad(types.I8, cg.cReg))
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, addr, a)
+		cg.updateMemory(b, addr, a)
 	})
 }
 
 func (cg *Codegen) ldh_a_n(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) {
 		addr := cg.calculateHighPageAddress(b, p)
-		b.NewStore(cg.loadMemory(b, addr), cg.aReg)
+		b.NewStore(cg.readMemory(b, addr), cg.aReg)
 	})
 }
 
@@ -117,45 +117,104 @@ func (cg *Codegen) ldh_n_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) {
 		addr := cg.calculateHighPageAddress(b, p)
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, addr, a)
+		cg.updateMemory(b, addr, a)
 	})
 }
 
 func (cg *Codegen) ld_a_hl_dec(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
-		b.NewStore(cg.loadMemory(b, hl), cg.aReg)
+		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		hl := cg.readReg16(b, r16)
+		b.NewStore(cg.readMemory(b, hl), cg.aReg)
 		hlDec := b.NewSub(hl, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, hlDec, cg.hReg, cg.lReg)
+		cg.updateReg16(b, r16, hlDec)
 	})
 }
 
 func (cg *Codegen) ld_hl_dec_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
+		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		hl := cg.readReg16(b, r16)
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, hl, a)
+		cg.updateMemory(b, hl, a)
 		hlDec := b.NewSub(hl, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, hlDec, cg.hReg, cg.lReg)
+		cg.updateReg16(b, r16, hlDec)
 	})
 }
 
 func (cg *Codegen) ld_a_hl_inc(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
-		b.NewStore(cg.loadMemory(b, hl), cg.aReg)
+		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		hl := cg.readReg16(b, r16)
+		b.NewStore(cg.readMemory(b, hl), cg.aReg)
 		hlInc := b.NewAdd(hl, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, hlInc, cg.hReg, cg.lReg)
+		cg.updateReg16(b, r16, hlInc)
 	})
 }
 
 func (cg *Codegen) ld_hl_inc_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.hReg, cg.lReg)
+		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		hl := cg.readReg16(b, r16)
 		a := b.NewLoad(types.I8, cg.aReg)
-		cg.storeMemory(b, hl, a)
+		cg.updateMemory(b, hl, a)
 		hlInc := b.NewAdd(hl, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, hlInc, cg.hReg, cg.lReg)
+		cg.updateReg16(b, r16, hlInc)
+	})
+}
+
+func (cg *Codegen) ld_r16_nn(instr *decoder.Instruction) *ir.Func {
+	return cg.buildParamFunc(instr, ir.NewParam("nn", types.I16), func(b *ir.Block, p *ir.Param) {
+		r16 := cg.findReg16GlobalDefs(instr.Reg16, b)
+		cg.updateReg16(b, r16, p)
+	})
+}
+
+func (cg *Codegen) ld_nn_sp(instr *decoder.Instruction) *ir.Func {
+	return cg.buildParamFunc(instr, ir.NewParam("nn", types.I16), func(b *ir.Block, p *ir.Param) {
+		sp := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16SP, b))
+		lsb := b.NewTrunc(sp, types.I8)
+		msb := b.NewTrunc(b.NewLShr(sp, constant.NewInt(types.I16, 8)), types.I8)
+		addr := p
+		nextAddr := b.NewAdd(p, constant.NewInt(types.I16, 1))
+		cg.updateMemory(b, addr, lsb)
+		cg.updateMemory(b, nextAddr, msb)
+	})
+}
+
+func (cg *Codegen) ld_sp_hl(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		sp := cg.findReg16GlobalDefs(decoder.Reg16SP, b)
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		cg.updateReg16(b, sp, hl)
+	})
+}
+
+func (cg *Codegen) ld_hl_sp_e(instr *decoder.Instruction) *ir.Func {
+	return cg.buildParamFunc(instr, ir.NewParam("e", types.I8), func(b *ir.Block, p *ir.Param) {
+		sp := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16SP, b))
+		hl := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+
+		e16 := b.NewSExt(p, types.I16)
+		result := b.NewAdd(sp, e16)
+		cg.updateReg16(b, hl, result)
+
+		// for finding carry bits:
+		// 	sum = lsb of sp + unsigned e
+		//  carry bits = (lsb of sp) ^ (unsigned e) ^ sum
+		spLow := b.NewTrunc(sp, types.I8)
+		spLow16 := b.NewZExt(spLow, types.I16)
+		e16u := b.NewZExt(p, types.I16)
+		sum16 := b.NewAdd(spLow16, e16u)
+		carryPerBit := b.NewXor(b.NewXor(spLow16, e16u), sum16)
+
+		hFlag := b.NewTrunc(b.NewLShr(carryPerBit, constant.NewInt(types.I64, 4)), types.I1)
+		cFlag := b.NewTrunc(b.NewLShr(carryPerBit, constant.NewInt(types.I64, 8)), types.I1)
+
+		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
+		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
+		b.NewStore(hFlag, cg.hFlag)
+		b.NewStore(cFlag, cg.cFlag)
 	})
 }
 
