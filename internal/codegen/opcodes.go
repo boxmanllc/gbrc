@@ -64,10 +64,10 @@ func (cg *Codegen) ld_hl_r8(instr *decoder.Instruction) *ir.Func {
 	entry := fn.NewBlock("entry")
 	entry.NewRet(nil)
 
-	srcReg := cg.findReg8GlobalDef(instr.Reg8Dest)
+	srcReg := cg.findReg8GlobalDef(instr.Reg8Src)
 	hl := cg.loadHL(entry)
-	destValue := cg.loadMemory(entry, hl)
-	cg.storeMemory(entry, destValue, srcReg)
+	srcValue := entry.NewLoad(types.I8, srcReg)
+	cg.storeMemory(entry, hl, srcValue)
 
 	cg.increaseCycles(instr, entry)
 	return fn
