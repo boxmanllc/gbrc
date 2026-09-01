@@ -1,0 +1,26 @@
+[env]
+GAME = "game"
+OUT = "rom.o"
+BUILD_PATH = "../build"
+OBJ_COPY_FLAGS = "--redefine-sym main=rom_main"
+
+[pre.out]
+cmd = """
+clang -c $BUILD_PATH/test.ll -o $BUILD_PATH/$OUT &&
+objcopy $OBJ_COPY_FLAGS $BUILD_PATH/$OUT
+"""
+
+[build]
+cmd = "clang -Iinclude ./src/*.c $BUILD_PATH/$OUT -o $BUILD_PATH/$GAME"
+
+[custom.setup]
+cmd = """
+rgbasm -o $BUILD_PATH/test.o ../tests/test.asm &&
+rgblink -o $BUILD_PATH/test.gb $BUILD_PATH/test.o &&
+go run .. --rom=$BUILD_PATH/test.gb --debug
+"""
+run = false
+
+[custom.run]
+cmd = "$BUILD_PATH/$GAME"
+run = true
