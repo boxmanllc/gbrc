@@ -1,0 +1,3 @@
+[submodule "ext/mgbdis"]
+	path = ext/mgbdis
+	url = https://github.com/mattcurrie/mgbdis.git

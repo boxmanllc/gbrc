@@ -256,6 +256,28 @@ func (cg *Codegen) pop_r16(instr *decoder.Instruction) *ir.Func {
 	})
 }
 
+func (cg *Codegen) add_r8(instr *decoder.Instruction, toIncludeCarryFlag bool) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		src := cg.findReg8GlobalDef(instr.Reg8Src)
+		srcVal := b.NewLoad(types.I8, src)
+		cg.perform8BitArithmetic(b, srcVal, r8ArithmeticAdd, toIncludeCarryFlag)
+	})
+}
+
+func (cg *Codegen) add_hl(instr *decoder.Instruction, toIncludeCarryFlag bool) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		srcVal := cg.readMemory(b, hl)
+		cg.perform8BitArithmetic(b, srcVal, r8ArithmeticAdd, toIncludeCarryFlag)
+	})
+}
+
+func (cg *Codegen) add_n(instr *decoder.Instruction, toIncludeCarryFlag bool) *ir.Func {
+	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) {
+		cg.perform8BitArithmetic(b, p, r8ArithmeticAdd, toIncludeCarryFlag)
+	})
+}
+
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 	toBlock, ok := cg.irBlocks[instr.Imm16Bit]

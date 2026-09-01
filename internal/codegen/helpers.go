@@ -12,16 +12,23 @@ import (
 	"github.com/llir/llvm/ir/value"
 )
 
-var (
-	mnemonicPat = regexp.MustCompile(`[ ,()]`)
-)
+type r8ArithmeticOp int
 
-type Reg16Store struct {
+type reg16Store struct {
 	msb, lsb   value.Value // value of two 8-bit registers which are composed together to create 16-bit register
 	val        value.Value // raw value of 16-bit register
 	isSplitUp  bool        // whether register's value composes of a single 16-bit register or combination of two 8-bit register
 	hasFlagReg bool        // whether F register is involved
 }
+
+const (
+	r8ArithmeticAdd r8ArithmeticOp = iota
+	r8ArithmeticSub
+)
+
+var (
+	mnemonicPat = regexp.MustCompile(`[ ,()]`)
+)
 
 func mnemonicToFuncName(mnemonic string) string {
 	return mnemonicPat.ReplaceAllString(mnemonic, "_")
@@ -68,24 +75,44 @@ func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
 	}
 }
 
-func (cg *Codegen) findReg16GlobalDefs(reg16 decoder.Reg16, irBlock *ir.Block) Reg16Store {
+func (cg *Codegen) findReg16GlobalDefs(reg16 decoder.Reg16, irBlock *ir.Block) reg16Store {
 	switch reg16 {
 	case decoder.Reg16BC:
-		return Reg16Store{isSplitUp: true, msb: cg.bReg, lsb: cg.cReg}
+		return reg16Store{
+			isSplitUp: true,
+			msb:       cg.bReg,
+			lsb:       cg.cReg,
+		}
 	case decoder.Reg16DE:
-		return Reg16Store{isSplitUp: true, msb: cg.dReg, lsb: cg.eReg}
+		return reg16Store{
+			isSplitUp: true,
+			msb:       cg.dReg,
+			lsb:       cg.eReg,
+		}
 	case decoder.Reg16HL:
-		return Reg16Store{isSplitUp: true, msb: cg.hReg, lsb: cg.lReg}
+		return reg16Store{
+			isSplitUp: true,
+			msb:       cg.hReg,
+			lsb:       cg.lReg,
+		}
 	case decoder.Reg16AF:
-		return Reg16Store{isSplitUp: true, hasFlagReg: true, msb: cg.aReg, lsb: cg.buildFReg(irBlock)}
+		return reg16Store{
+			isSplitUp:  true,
+			hasFlagReg: true,
+			msb:        cg.aReg,
+			lsb:        cg.buildFReg(irBlock),
+		}
 	case decoder.Reg16SP:
-		return Reg16Store{isSplitUp: false, val: cg.sp}
+		return reg16Store{
+			isSplitUp: false,
+			val:       cg.sp,
+		}
 	default:
 		panic(fmt.Sprintf("cannot find llvm global def for %d reg16 type", reg16))
 	}
 }
 
-func (cg *Codegen) readReg16(irBlock *ir.Block, reg16 Reg16Store) value.Value {
+func (cg *Codegen) readReg16(irBlock *ir.Block, reg16 reg16Store) value.Value {
 	if reg16.isSplitUp {
 		msbVal := irBlock.NewLoad(types.I8, reg16.msb)
 		var lsb16 *ir.InstZExt
@@ -106,7 +133,7 @@ func (cg *Codegen) readReg16(irBlock *ir.Block, reg16 Reg16Store) value.Value {
 	}
 }
 
-func (cg *Codegen) updateReg16(irBlock *ir.Block, reg16 Reg16Store, newVal value.Value) {
+func (cg *Codegen) updateReg16(irBlock *ir.Block, reg16 reg16Store, newVal value.Value) {
 	if reg16.isSplitUp {
 		msb16 := irBlock.NewLShr(newVal, constant.NewInt(types.I16, 8))
 		msbVal := irBlock.NewTrunc(msb16, types.I8)
@@ -181,6 +208,68 @@ func (cg *Codegen) updateFReg(irBlock *ir.Block, val value.Value) {
 	irBlock.NewStore(n, cg.nFlag)
 	irBlock.NewStore(h, cg.hFlag)
 	irBlock.NewStore(c, cg.cFlag)
+}
+
+func (cg *Codegen) perform8BitArithmetic(
+	irBlock *ir.Block, srcVal value.Value,
+	op r8ArithmeticOp, toIncludeCarryFlag bool,
+) {
+	a := cg.findReg8GlobalDef(decoder.Reg8A)
+	aVal := irBlock.NewLoad(types.I8, a)
+
+	a16 := irBlock.NewZExt(aVal, types.I16)
+	src16 := irBlock.NewZExt(srcVal, types.I16)
+
+	c16 := value.Value(constant.NewInt(types.I16, 0))
+	if toIncludeCarryFlag {
+		cVal := irBlock.NewLoad(types.I1, cg.cFlag)
+		c16 = irBlock.NewZExt(cVal, types.I16)
+	}
+
+	var result value.Value
+	var zFlag, nFlag, hFlag, cFlag value.Value
+
+	switch op {
+	case r8ArithmeticAdd:
+		result16 := irBlock.NewAdd(irBlock.NewAdd(a16, src16), c16)
+
+		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
+		srcLow := irBlock.NewAnd(src16, constant.NewInt(types.I16, 0x0F))
+		lowSum := irBlock.NewAdd(irBlock.NewAdd(aLow, srcLow), c16)
+
+		// z: result == 0
+		// n: 0
+		// h: (a & 0x0F) + (b & 0x0F) + c >= 0x10
+		// c: result16 >= 0x100
+		result = irBlock.NewTrunc(result16, types.I8)
+		zFlag = irBlock.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
+		nFlag = constant.NewInt(types.I8, 0)
+		hFlag = irBlock.NewICmp(enum.IPredUGE, lowSum, constant.NewInt(types.I16, 0x10))
+		cFlag = irBlock.NewICmp(enum.IPredUGE, result16, constant.NewInt(types.I16, 0x100))
+	case r8ArithmeticSub:
+		result16 := irBlock.NewSub(irBlock.NewSub(a16, src16), c16)
+
+		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
+		srcLow := irBlock.NewAnd(src16, constant.NewInt(types.I16, 0x0F))
+		rhsLow := irBlock.NewAdd(srcLow, c16)
+		rhs := irBlock.NewAdd(src16, c16)
+
+		// z: result == 0
+		// n: 1
+		// h: (a & 0x0F) < (b & 0x0F) + c
+		// c: a < b + c
+		result = irBlock.NewTrunc(result16, types.I8)
+		zFlag = irBlock.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
+		nFlag = constant.NewInt(types.I8, 1)
+		hFlag = irBlock.NewICmp(enum.IPredULT, aLow, rhsLow)
+		cFlag = irBlock.NewICmp(enum.IPredULT, a16, rhs)
+	}
+
+	irBlock.NewStore(result, a)
+	irBlock.NewStore(zFlag, cg.zFlag)
+	irBlock.NewStore(nFlag, cg.nFlag)
+	irBlock.NewStore(hFlag, cg.hFlag)
+	irBlock.NewStore(cFlag, cg.cFlag)
 }
 
 func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block)) *ir.Func {
