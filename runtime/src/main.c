@@ -2,12 +2,12 @@
 #include <stdio.h>
 
 void gb_init() {
-  // todooo
+	// todooo
 }
 
 int main() {
-  gb_init();
-  rom_main();
-  printf("cycles=%d ram[0xC000]=%02X\n", cycles, ram[0xC000]);
-  return 0;
+	gb_init();
+	rom_main();
+	printf("cycles=%d ram[0xC000]=%02X\n", cycles, ram[0xC000]);
+	return 0;
 }

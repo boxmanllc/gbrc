@@ -1,5 +1,6 @@
 #ifndef GB_H
 #define GB_H
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -25,4 +26,5 @@ extern uint16_t sp;
 extern uint32_t rom_main();
 
 void gb_init();
+
 #endif
