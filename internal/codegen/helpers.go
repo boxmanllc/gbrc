@@ -47,11 +47,11 @@ func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 }
 
 func (cg *Codegen) readMemory(irBlock *ir.Block, addr value.Value) value.Value {
-	return irBlock.NewLoad(types.I8, cg.getRamPtr(irBlock, addr))
+	return irBlock.NewCall(cg.readRam, addr)
 }
 
 func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
-	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
+	irBlock.NewCall(cg.writeRam, addr, val)
 }
 
 func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {

@@ -6,6 +6,8 @@
 const Button DPAD_BUTTONS[4] = {RIGHT, LEFT, UP, DOWN};
 const Button FACE_BUTTONS[4] = {A, B, SELECT, START};
 
+static Jp joypad;
+
 void new_pad(Jp *pad) {
 	memset(pad->buttons, false, sizeof(pad->buttons));
 	pad->dpad_selected = false;
@@ -71,3 +73,9 @@ void write_u8(Jp *pad, uint16_t addr, uint8_t val) {
 			pad->ram[rel] = val;
 	}
 }
+
+// no arg wrappers
+void joypad_init() { new_pad(&joypad); }
+uint8_t joypad_read_reg() { return read_joypad(&joypad); }
+void joypad_write_reg(uint8_t val) { write_u8(&joypad, JOYPAD_ADDR, val); }
+void joypad_press(Button b, bool pressed) { set_button(&joypad, b, pressed); }

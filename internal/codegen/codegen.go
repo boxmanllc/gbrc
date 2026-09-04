@@ -25,6 +25,9 @@ type Codegen struct {
 	zFlag, nFlag, hFlag, cFlag               *ir.Global
 	pc, sp                                   *ir.Global
 
+	readRam  *ir.Func // helper for read_ram() called in runtime
+	writeRam *ir.Func // helper for write_ram() called in runtime
+
 	debug     bool
 	debugFunc *ir.Func
 }
@@ -93,6 +96,9 @@ func (cg *Codegen) emitGlobals() {
 	cg.cFlag = cg.module.NewGlobalDef("c_flag", constant.NewBool(false)) // carry flag
 	cg.pc = cg.module.NewGlobalDef("pc", constant.NewInt(types.I16, 0))
 	cg.sp = cg.module.NewGlobalDef("sp", constant.NewInt(types.I16, 0))
+
+	cg.readRam = cg.module.NewFunc("read_ram", types.I8, ir.NewParam("addr", types.I16))
+	cg.writeRam = cg.module.NewFunc("write_ram", types.Void, ir.NewParam("addr", types.I16), ir.NewParam("val", types.I8))
 }
 
 func (cg *Codegen) emitBlock(block *analyzer.Block) error {
