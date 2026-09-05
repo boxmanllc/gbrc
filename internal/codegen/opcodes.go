@@ -354,6 +354,24 @@ func (cg *Codegen) cpl(instr *decoder.Instruction) *ir.Func {
 	})
 }
 
+func (cg *Codegen) inc_r16(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		r16 := cg.findReg16GlobalDefs(b, instr.Reg16)
+		val := cg.readReg16(b, r16)
+		val = b.NewAdd(val, constant.NewInt(types.I16, 1))
+		cg.updateReg16(b, r16, val)
+	})
+}
+
+func (cg *Codegen) dec_r16(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		r16 := cg.findReg16GlobalDefs(b, instr.Reg16)
+		val := cg.readReg16(b, r16)
+		val = b.NewSub(val, constant.NewInt(types.I16, 1))
+		cg.updateReg16(b, r16, val)
+	})
+}
+
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 	toBlock, ok := cg.irBlocks[instr.Imm16Bit]

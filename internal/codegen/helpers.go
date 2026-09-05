@@ -52,12 +52,6 @@ func mnemonicToFuncName(mnemonic string) string {
 	return mnemonicPat.ReplaceAllString(mnemonic, "_")
 }
 
-func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block) {
-	cycles := irBlock.NewLoad(types.I32, cg.cycles)
-	cyclesInc := irBlock.NewAdd(cycles, constant.NewInt(types.I32, int64(instr.BaseMCycles)))
-	irBlock.NewStore(cyclesInc, cg.cycles)
-}
-
 func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 	ramp := irBlock.NewBitCast(cg.ram, types.NewPointer(types.I8))
 	idx := irBlock.NewZExt(addr, types.I64)
@@ -65,11 +59,11 @@ func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 }
 
 func (cg *Codegen) readMemory(irBlock *ir.Block, addr value.Value) value.Value {
-	return irBlock.NewCall(cg.readRam, addr)
+	return irBlock.NewLoad(types.I8, cg.getRamPtr(irBlock, addr))
 }
 
 func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
-	irBlock.NewCall(cg.writeRam, addr, val)
+	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
 func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
@@ -346,6 +340,12 @@ func (cg *Codegen) perform8BitArithmetic(
 	if cFlag != nil {
 		irBlock.NewStore(cFlag, cg.cFlag)
 	}
+}
+
+func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block) {
+	cycles := irBlock.NewLoad(types.I32, cg.cycles)
+	cyclesInc := irBlock.NewAdd(cycles, constant.NewInt(types.I32, int64(instr.BaseMCycles)))
+	irBlock.NewStore(cyclesInc, cg.cycles)
 }
 
 func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block)) *ir.Func {
