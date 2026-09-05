@@ -12,7 +12,8 @@ import (
 	"github.com/llir/llvm/ir/value"
 )
 
-type r8ArithmeticOp int
+type bit8ArithmeticOp int
+type bit8ArithmeticDest int
 
 type reg16Store struct {
 	msb, lsb   value.Value // value of two 8-bit registers which are composed together to create 16-bit register
@@ -21,9 +22,26 @@ type reg16Store struct {
 	hasFlagReg bool        // whether F register is involved
 }
 
+type bit8ArithemticConfig struct {
+	destType           bit8ArithmeticDest
+	destLocation       value.Value
+	toIncludeCarryFlag bool
+}
+
 const (
-	r8ArithmeticAdd r8ArithmeticOp = iota
-	r8ArithmeticSub
+	bit8OpAdd bit8ArithmeticOp = iota
+	bit8OpSub
+	bit8OpCompare
+	bit8OpIncrease
+	bit8OpDecrease
+	bit8OpAnd
+	bit8OpOr
+	bit8OpXor
+)
+
+const (
+	bit8DestReg bit8ArithmeticDest = iota // store result in a register
+	bit8DestHL                            // store result in location pointed by (HL)
 )
 
 var (
@@ -75,7 +93,7 @@ func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
 	}
 }
 
-func (cg *Codegen) findReg16GlobalDefs(reg16 decoder.Reg16, irBlock *ir.Block) reg16Store {
+func (cg *Codegen) findReg16GlobalDefs(irBlock *ir.Block, reg16 decoder.Reg16) reg16Store {
 	switch reg16 {
 	case decoder.Reg16BC:
 		return reg16Store{
@@ -211,65 +229,123 @@ func (cg *Codegen) updateFReg(irBlock *ir.Block, val value.Value) {
 }
 
 func (cg *Codegen) perform8BitArithmetic(
-	irBlock *ir.Block, srcVal value.Value,
-	op r8ArithmeticOp, toIncludeCarryFlag bool,
+	irBlock *ir.Block, opType bit8ArithmeticOp,
+	operand value.Value, cfg bit8ArithemticConfig,
 ) {
-	a := cg.findReg8GlobalDef(decoder.Reg8A)
-	aVal := irBlock.NewLoad(types.I8, a)
+	var a, aVal, a16, operand16, c16 value.Value
+	var result, nFlag, hFlag, cFlag value.Value
 
-	a16 := irBlock.NewZExt(aVal, types.I16)
-	src16 := irBlock.NewZExt(srcVal, types.I16)
+	if opType != bit8OpIncrease && opType != bit8OpDecrease {
+		a = cg.findReg8GlobalDef(decoder.Reg8A)
+		aVal = irBlock.NewLoad(types.I8, a)
+	}
 
-	c16 := value.Value(constant.NewInt(types.I16, 0))
-	if toIncludeCarryFlag {
+	if opType == bit8OpAdd || opType == bit8OpSub || opType == bit8OpCompare {
+		a16 = irBlock.NewZExt(aVal, types.I16)
+		operand16 = irBlock.NewZExt(operand, types.I16)
+	}
+
+	if cfg.toIncludeCarryFlag {
 		cVal := irBlock.NewLoad(types.I1, cg.cFlag)
 		c16 = irBlock.NewZExt(cVal, types.I16)
 	}
 
-	var result value.Value
-	var zFlag, nFlag, hFlag, cFlag value.Value
-
-	switch op {
-	case r8ArithmeticAdd:
-		result16 := irBlock.NewAdd(irBlock.NewAdd(a16, src16), c16)
+	switch opType {
+	case bit8OpAdd:
+		// stores result in A register
+		// flags:
+		// 	 z: result == 0
+		// 	 n: 0
+		// 	 h: (a & 0x0F) + (b & 0x0F) + c >= 0x10
+		// 	 c: result16 >= 0x100
+		result16 := irBlock.NewAdd(ir.NewAdd(a16, operand16), c16)
 
 		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
-		srcLow := irBlock.NewAnd(src16, constant.NewInt(types.I16, 0x0F))
-		lowSum := irBlock.NewAdd(irBlock.NewAdd(aLow, srcLow), c16)
+		operandLow := irBlock.NewAnd(operand16, constant.NewInt(types.I16, 0x0F))
+		sumLow := irBlock.NewAdd(irBlock.NewAdd(aLow, operandLow), c16)
 
-		// z: result == 0
-		// n: 0
-		// h: (a & 0x0F) + (b & 0x0F) + c >= 0x10
-		// c: result16 >= 0x100
 		result = irBlock.NewTrunc(result16, types.I8)
-		zFlag = irBlock.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
 		nFlag = constant.NewInt(types.I8, 0)
-		hFlag = irBlock.NewICmp(enum.IPredUGE, lowSum, constant.NewInt(types.I16, 0x10))
+		hFlag = irBlock.NewICmp(enum.IPredUGE, sumLow, constant.NewInt(types.I16, 0x10))
 		cFlag = irBlock.NewICmp(enum.IPredUGE, result16, constant.NewInt(types.I16, 0x100))
-	case r8ArithmeticSub:
-		result16 := irBlock.NewSub(irBlock.NewSub(a16, src16), c16)
+	case bit8OpSub, bit8OpCompare:
+		// stores result in A register
+		// flags:
+		//   z: result == 0
+		//   n: 1
+		//   h: (a & 0x0F) < (b & 0x0F) + c
+		//   c: a < b + c
+		result16 := irBlock.NewSub(irBlock.NewSub(a16, operand16), c16)
 
 		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
-		srcLow := irBlock.NewAnd(src16, constant.NewInt(types.I16, 0x0F))
-		rhsLow := irBlock.NewAdd(srcLow, c16)
-		rhs := irBlock.NewAdd(src16, c16)
+		operandLow := irBlock.NewAnd(operand16, constant.NewInt(types.I16, 0x0F))
+		rhsLow := irBlock.NewAdd(operandLow, c16)
+		rhs := irBlock.NewAdd(operand16, c16)
 
-		// z: result == 0
-		// n: 1
-		// h: (a & 0x0F) < (b & 0x0F) + c
-		// c: a < b + c
 		result = irBlock.NewTrunc(result16, types.I8)
-		zFlag = irBlock.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
 		nFlag = constant.NewInt(types.I8, 1)
 		hFlag = irBlock.NewICmp(enum.IPredULT, aLow, rhsLow)
 		cFlag = irBlock.NewICmp(enum.IPredULT, a16, rhs)
+	case bit8OpIncrease:
+		// stores result in either source register or location pointed by (HL)
+		// flags:
+		//   z: result == 0
+		//   n: 0
+		//   h: (operand & 0x0F) + 1 >= 0x10
+		result = irBlock.NewAdd(operand, constant.NewInt(types.I8, 1))
+
+		operandLow := irBlock.NewAnd(operand, constant.NewInt(types.I8, 0x0F))
+		sumLow := irBlock.NewAdd(operandLow, constant.NewInt(types.I8, 1))
+
+		nFlag = constant.NewInt(types.I8, 0)
+		hFlag = irBlock.NewICmp(enum.IPredUGE, sumLow, constant.NewInt(types.I8, 0x10))
+	case bit8OpDecrease:
+		// stores result in either source register or location point by (HL)
+		// flags:
+		//   z: result == 0
+		//   n: 1
+		//   h: (a & 0x0F) < 1
+		result = irBlock.NewSub(a, constant.NewInt(types.I8, 1))
+
+		aLow := irBlock.NewAnd(a, constant.NewInt(types.I8, 0x0F))
+
+		nFlag = constant.NewInt(types.I8, 1)
+		hFlag = irBlock.NewICmp(enum.IPredUGT, aLow, constant.NewInt(types.I8, 1))
+	case bit8OpAnd:
+		result = irBlock.NewAnd(a, operand)
+		nFlag = constant.NewInt(types.I8, 0)
+		hFlag = constant.NewInt(types.I8, 1)
+		cFlag = constant.NewInt(types.I8, 0)
+	case bit8OpOr:
+		result = irBlock.NewOr(a, operand)
+		nFlag = constant.NewInt(types.I8, 0)
+		hFlag = constant.NewInt(types.I8, 0)
+		cFlag = constant.NewInt(types.I8, 0)
+	case bit8OpXor:
+		result = irBlock.NewXor(a, operand)
+		nFlag = constant.NewInt(types.I8, 0)
+		hFlag = constant.NewInt(types.I8, 0)
+		cFlag = constant.NewInt(types.I8, 0)
 	}
 
-	irBlock.NewStore(result, a)
+	zFlag := irBlock.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
+
+	if opType != bit8OpCompare {
+		switch cfg.destType {
+		case bit8DestReg:
+			irBlock.NewStore(result, cfg.destLocation)
+		case bit8DestHL:
+			cg.updateMemory(irBlock, cfg.destLocation, result)
+		}
+	}
+
 	irBlock.NewStore(zFlag, cg.zFlag)
 	irBlock.NewStore(nFlag, cg.nFlag)
 	irBlock.NewStore(hFlag, cg.hFlag)
-	irBlock.NewStore(cFlag, cg.cFlag)
+
+	if cFlag != nil {
+		irBlock.NewStore(cFlag, cg.cFlag)
+	}
 }
 
 func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block)) *ir.Func {
@@ -363,4 +439,29 @@ func (cg *Codegen) setupDebugFunc() {
 		zChar32, nChar32, hChar32, cChar32, cycles,
 	)
 	entry.NewRet(nil)
+}
+
+func (cg *Codegen) bit8ArithmeticInstrTypeToOpType(instr *decoder.Instruction) bit8ArithmeticOp {
+	switch instr.InstructionType {
+	case decoder.ADD_R8, decoder.ADD_HL, decoder.ADD_N,
+		decoder.ADC_R8, decoder.ADC_HL, decoder.ADC_N:
+		return bit8OpAdd
+	case decoder.SUB_R8, decoder.SUB_HL, decoder.SUB_N,
+		decoder.SBC_R8, decoder.SBC_HL, decoder.SBC_N:
+		return bit8OpSub
+	case decoder.CP_R8, decoder.CP_HL, decoder.CP_N:
+		return bit8OpCompare
+	case decoder.INC_R8, decoder.INC_HL:
+		return bit8OpIncrease
+	case decoder.DEC_R8, decoder.DEC_HL:
+		return bit8OpDecrease
+	case decoder.AND_R8, decoder.AND_HL, decoder.AND_N:
+		return bit8OpAnd
+	case decoder.OR_R8, decoder.OR_HL, decoder.OR_N:
+		return bit8OpOr
+	case decoder.XOR_R8, decoder.XOR_HL, decoder.XOR_N:
+		return bit8OpXor
+	}
+
+	panic(fmt.Sprintf("%d is not a 8-bit arithmetic opcode", instr.InstructionType))
 }

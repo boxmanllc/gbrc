@@ -191,18 +191,26 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*Function, error
 			irFunc = cg.push_r16(instr)
 		case decoder.POP_R16:
 			irFunc = cg.pop_r16(instr)
-		case decoder.ADD_R8:
-			irFunc = cg.add_r8(instr, false)
-		case decoder.ADD_HL:
-			irFunc = cg.add_hl(instr, false)
-		case decoder.ADD_N:
-			irFunc = cg.add_n(instr, false)
-		case decoder.ADC_R8:
-			irFunc = cg.add_r8(instr, true)
-		case decoder.ADC_HL:
-			irFunc = cg.add_hl(instr, true)
-		case decoder.ADC_N:
-			irFunc = cg.add_n(instr, true)
+		case decoder.ADD_R8, decoder.ADC_R8,
+			decoder.SUB_R8, decoder.SBC_R8, decoder.CP_R8,
+			decoder.INC_R8, decoder.DEC_R8,
+			decoder.AND_R8, decoder.OR_R8, decoder.XOR_R8:
+			irFunc = cg.bit8_arithmetic_r8(instr)
+		case decoder.ADD_HL, decoder.ADC_HL,
+			decoder.SUB_HL, decoder.SBC_HL, decoder.CP_HL,
+			decoder.INC_HL, decoder.DEC_HL,
+			decoder.AND_HL, decoder.OR_HL, decoder.XOR_HL:
+			irFunc = cg.bit8_arithmetic_hl(instr)
+		case decoder.ADD_N, decoder.ADC_N,
+			decoder.SUB_N, decoder.SBC_N, decoder.CP_N,
+			decoder.AND_N, decoder.OR_N, decoder.XOR_N:
+			irFunc = cg.bit8_arithmetic_n(instr)
+		case decoder.CCF:
+			irFunc = cg.ccf(instr)
+		case decoder.SCF:
+			irFunc = cg.scf(instr)
+		case decoder.CPL:
+			irFunc = cg.cpl(instr)
 		default:
 			return nil, fmt.Errorf("cannot emit opcode function ir. unknown instruction type: %d", instr.InstructionType)
 		}
@@ -213,10 +221,14 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*Function, error
 	// then, build up the function's arguments
 	args := []value.Value{}
 	switch instr.InstructionType {
-	case decoder.LD_R8_N, decoder.LD_HL_N, decoder.LDH_A_N, decoder.LDH_N_A, decoder.LD_HL_SP_E,
-		decoder.ADD_N, decoder.ADC_N:
+	case decoder.LD_R8_N, decoder.LD_HL_N,
+		decoder.LDH_A_N, decoder.LDH_N_A, decoder.LD_HL_SP_E,
+		decoder.ADD_N, decoder.ADC_N,
+		decoder.SUB_N, decoder.SBC_N,
+		decoder.CP_N:
 		args = []value.Value{constant.NewInt(types.I8, int64(instr.Imm8Bit))}
-	case decoder.LD_A_NN, decoder.LD_NN_A, decoder.LD_R16_NN, decoder.LD_NN_SP:
+	case decoder.LD_A_NN, decoder.LD_NN_A,
+		decoder.LD_R16_NN, decoder.LD_NN_SP:
 		args = []value.Value{constant.NewInt(types.I16, int64(instr.Imm16Bit))}
 	}
 

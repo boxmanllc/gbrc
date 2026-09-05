@@ -7,6 +7,7 @@ import (
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
 	"github.com/llir/llvm/ir/types"
+	"github.com/llir/llvm/ir/value"
 )
 
 func (cg *Codegen) nop(instr *decoder.Instruction) *ir.Func {
@@ -28,14 +29,14 @@ func (cg *Codegen) ld_r8_n(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_r8_hl(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16HL))
 		b.NewStore(cg.readMemory(b, hl), cg.findReg8GlobalDef(instr.Reg8Dest))
 	})
 }
 
 func (cg *Codegen) ld_hl_r8(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16HL))
 		src := b.NewLoad(types.I8, cg.findReg8GlobalDef(instr.Reg8Src))
 		cg.updateMemory(b, hl, src)
 	})
@@ -43,28 +44,28 @@ func (cg *Codegen) ld_hl_r8(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_hl_n(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) {
-		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16HL))
 		cg.updateMemory(b, hl, p)
 	})
 }
 
 func (cg *Codegen) ld_a_bc(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		bc := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16BC, b))
+		bc := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16BC))
 		b.NewStore(cg.readMemory(b, bc), cg.aReg)
 	})
 }
 
 func (cg *Codegen) ld_a_de(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		de := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16DE, b))
+		de := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16DE))
 		b.NewStore(cg.readMemory(b, de), cg.aReg)
 	})
 }
 
 func (cg *Codegen) ld_bc_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		bc := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16BC, b))
+		bc := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16BC))
 		a := b.NewLoad(types.I8, cg.aReg)
 		cg.updateMemory(b, bc, a)
 	})
@@ -72,7 +73,7 @@ func (cg *Codegen) ld_bc_a(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_de_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		de := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16DE, b))
+		de := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16DE))
 		a := b.NewLoad(types.I8, cg.aReg)
 		cg.updateMemory(b, de, a)
 	})
@@ -123,7 +124,7 @@ func (cg *Codegen) ldh_n_a(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_a_hl_dec(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		r16 := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
 		hl := cg.readReg16(b, r16)
 		b.NewStore(cg.readMemory(b, hl), cg.aReg)
 		hlDec := b.NewSub(hl, constant.NewInt(types.I16, 1))
@@ -133,7 +134,7 @@ func (cg *Codegen) ld_a_hl_dec(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_hl_dec_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		r16 := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
 		hl := cg.readReg16(b, r16)
 		a := b.NewLoad(types.I8, cg.aReg)
 		cg.updateMemory(b, hl, a)
@@ -144,7 +145,7 @@ func (cg *Codegen) ld_hl_dec_a(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_a_hl_inc(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		r16 := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
 		hl := cg.readReg16(b, r16)
 		b.NewStore(cg.readMemory(b, hl), cg.aReg)
 		hlInc := b.NewAdd(hl, constant.NewInt(types.I16, 1))
@@ -154,7 +155,7 @@ func (cg *Codegen) ld_a_hl_inc(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_hl_inc_a(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		r16 := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		r16 := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
 		hl := cg.readReg16(b, r16)
 		a := b.NewLoad(types.I8, cg.aReg)
 		cg.updateMemory(b, hl, a)
@@ -165,14 +166,14 @@ func (cg *Codegen) ld_hl_inc_a(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_r16_nn(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("nn", types.I16), func(b *ir.Block, p *ir.Param) {
-		r16 := cg.findReg16GlobalDefs(instr.Reg16, b)
+		r16 := cg.findReg16GlobalDefs(b, instr.Reg16)
 		cg.updateReg16(b, r16, p)
 	})
 }
 
 func (cg *Codegen) ld_nn_sp(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("nn", types.I16), func(b *ir.Block, p *ir.Param) {
-		sp := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16SP, b))
+		sp := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16SP))
 		lsb := b.NewTrunc(sp, types.I8)
 		msb := b.NewTrunc(b.NewLShr(sp, constant.NewInt(types.I16, 8)), types.I8)
 		addr := p
@@ -184,16 +185,16 @@ func (cg *Codegen) ld_nn_sp(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_sp_hl(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		sp := cg.findReg16GlobalDefs(decoder.Reg16SP, b)
-		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
+		sp := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16HL))
 		cg.updateReg16(b, sp, hl)
 	})
 }
 
 func (cg *Codegen) ld_hl_sp_e(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("e", types.I8), func(b *ir.Block, p *ir.Param) {
-		sp := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16SP, b))
-		hl := cg.findReg16GlobalDefs(decoder.Reg16HL, b)
+		sp := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16SP))
+		hl := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
 
 		e16 := b.NewSExt(p, types.I16)
 		result := b.NewAdd(sp, e16)
@@ -220,8 +221,8 @@ func (cg *Codegen) ld_hl_sp_e(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) push_r16(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		r16 := cg.findReg16GlobalDefs(instr.Reg16, b)
-		sp := cg.findReg16GlobalDefs(decoder.Reg16SP, b)
+		r16 := cg.findReg16GlobalDefs(b, instr.Reg16)
+		sp := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
 		spVal := cg.readReg16(b, sp)
 
 		spVal = b.NewSub(spVal, constant.NewInt(types.I16, 1))
@@ -236,8 +237,8 @@ func (cg *Codegen) push_r16(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) pop_r16(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		r16 := cg.findReg16GlobalDefs(instr.Reg16, b)
-		sp := cg.findReg16GlobalDefs(decoder.Reg16SP, b)
+		r16 := cg.findReg16GlobalDefs(b, instr.Reg16)
+		sp := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
 		spVal := cg.readReg16(b, sp)
 
 		lsb := cg.readMemory(b, spVal)
@@ -256,25 +257,100 @@ func (cg *Codegen) pop_r16(instr *decoder.Instruction) *ir.Func {
 	})
 }
 
-func (cg *Codegen) add_r8(instr *decoder.Instruction, toIncludeCarryFlag bool) *ir.Func {
+func (cg *Codegen) bit8_arithmetic_r8(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
 		src := cg.findReg8GlobalDef(instr.Reg8Src)
-		srcVal := b.NewLoad(types.I8, src)
-		cg.perform8BitArithmetic(b, srcVal, r8ArithmeticAdd, toIncludeCarryFlag)
+		operand := b.NewLoad(types.I8, src)
+		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
+
+		dest := cg.aReg
+		if instr.InstructionType == decoder.INC_R8 || instr.InstructionType == decoder.DEC_R8 {
+			dest = src
+		}
+
+		toIncludeCarryFlag := false
+		if instr.InstructionType == decoder.ADC_R8 || instr.InstructionType == decoder.SBC_R8 {
+			toIncludeCarryFlag = true
+		}
+
+		cg.perform8BitArithmetic(b, opType, operand, bit8ArithemticConfig{
+			destType:           bit8DestReg,
+			destLocation:       dest,
+			toIncludeCarryFlag: toIncludeCarryFlag,
+		})
 	})
 }
 
-func (cg *Codegen) add_hl(instr *decoder.Instruction, toIncludeCarryFlag bool) *ir.Func {
+func (cg *Codegen) bit8_arithmetic_hl(instr *decoder.Instruction) *ir.Func {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-		hl := cg.readReg16(b, cg.findReg16GlobalDefs(decoder.Reg16HL, b))
-		srcVal := cg.readMemory(b, hl)
-		cg.perform8BitArithmetic(b, srcVal, r8ArithmeticAdd, toIncludeCarryFlag)
+		hl := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16HL))
+		operand := cg.readMemory(b, hl)
+		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
+
+		dest := value.Value(cg.aReg)
+		destType := bit8DestReg
+		if instr.InstructionType == decoder.INC_HL || instr.InstructionType == decoder.DEC_HL {
+			dest = hl
+			destType = bit8DestHL
+		}
+
+		toIncludeCarryFlag := false
+		if instr.InstructionType == decoder.ADC_HL || instr.InstructionType == decoder.SBC_HL {
+			toIncludeCarryFlag = true
+		}
+
+		cg.perform8BitArithmetic(b, opType, operand, bit8ArithemticConfig{
+			destType:           destType,
+			destLocation:       dest,
+			toIncludeCarryFlag: toIncludeCarryFlag,
+		})
 	})
 }
 
-func (cg *Codegen) add_n(instr *decoder.Instruction, toIncludeCarryFlag bool) *ir.Func {
+func (cg *Codegen) bit8_arithmetic_n(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) {
-		cg.perform8BitArithmetic(b, p, r8ArithmeticAdd, toIncludeCarryFlag)
+		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
+
+		toIncludeCarryFlag := false
+		if instr.InstructionType == decoder.ADC_N || instr.InstructionType == decoder.SBC_N {
+			toIncludeCarryFlag = true
+		}
+
+		cg.perform8BitArithmetic(b, opType, p, bit8ArithemticConfig{
+			destType:           bit8DestReg,
+			destLocation:       cg.aReg,
+			toIncludeCarryFlag: toIncludeCarryFlag,
+		})
+	})
+}
+
+func (cg *Codegen) ccf(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		cVal := b.NewLoad(types.I1, cg.cFlag)
+		flipC := b.NewXor(cVal, constant.NewInt(types.I1, -1))
+
+		b.NewStore(constant.NewInt(types.I8, 0), cg.nFlag)
+		b.NewStore(constant.NewInt(types.I8, 0), cg.hFlag)
+		b.NewStore(flipC, cg.cFlag)
+	})
+}
+
+func (cg *Codegen) scf(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		b.NewStore(constant.NewInt(types.I8, 0), cg.nFlag)
+		b.NewStore(constant.NewInt(types.I8, 0), cg.hFlag)
+		b.NewStore(constant.NewInt(types.I8, 1), cg.cFlag)
+	})
+}
+
+func (cg *Codegen) cpl(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		aVal := b.NewLoad(types.I8, cg.aReg)
+		flipA := b.NewXor(aVal, constant.NewInt(types.I8, -1))
+
+		b.NewStore(flipA, cg.aReg)
+		b.NewStore(constant.NewInt(types.I1, 1), cg.nFlag)
+		b.NewStore(constant.NewInt(types.I1, 1), cg.hFlag)
 	})
 }
 
