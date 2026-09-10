@@ -37,6 +37,7 @@ void write_u8(Jp *pad, uint16_t addr, uint8_t val);
 uint8_t read_joypad(Jp *pad);
 void set_button(Jp *pad, Button button, bool pressed);
 
+// no arg wrappers
 void joypad_init();
 uint8_t joypad_read_reg();
 void joypad_write_reg(uint8_t val);

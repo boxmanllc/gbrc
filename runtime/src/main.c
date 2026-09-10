@@ -1,9 +1,12 @@
 #include "gb.h"
+#include "interrupt.h"
+#include "joypad.h"
 #include "ram.h"
 #include <stdio.h>
 
 void gb_init() {
-	// todooo
+	interrupt_init();
+	joypad_init();
 }
 
 int main() {

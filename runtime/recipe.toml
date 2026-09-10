@@ -24,3 +24,8 @@ run = false
 [custom.run]
 cmd = "$BUILD_PATH/$GAME"
 run = true
+
+# remove this later
+[custom.interrupt-test]
+cmd = "clang -Iinclude tests/interrupt_check.c src/interrupt.c -o $BUILD_PATH/interrupt_check && $BUILD_PATH/interrupt_check"
+run = false
