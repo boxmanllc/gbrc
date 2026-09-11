@@ -6,6 +6,7 @@ import (
 	"github.com/0xmukesh/boxman/internal/decoder"
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
+	"github.com/llir/llvm/ir/enum"
 	"github.com/llir/llvm/ir/types"
 	"github.com/llir/llvm/ir/value"
 )
@@ -193,27 +194,30 @@ func (cg *Codegen) ld_sp_hl(instr *decoder.Instruction) *ir.Func {
 
 func (cg *Codegen) ld_hl_sp_e(instr *decoder.Instruction) *ir.Func {
 	return cg.buildParamFunc(instr, ir.NewParam("e", types.I8), func(b *ir.Block, p *ir.Param) {
-		sp := cg.readReg16(b, cg.findReg16GlobalDefs(b, decoder.Reg16SP))
+		sp := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
 		hl := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
+		spVal := cg.readReg16(b, sp)
 
-		e16 := b.NewSExt(p, types.I16)
-		result := b.NewAdd(sp, e16)
+		eSigned16 := b.NewSExt(p, types.I16)
+		eUnsigned16 := b.NewZExt(p, types.I16)
+
+		result := b.NewAdd(spVal, eSigned16)
+
+		spLow := b.NewAnd(spVal, constant.NewInt(types.I16, 0x0F))
+		eLow := b.NewAnd(eUnsigned16, constant.NewInt(types.I16, 0x0F))
+		lowSum := b.NewAdd(spLow, eLow)
+
+		spByte := b.NewAnd(spVal, constant.NewInt(types.I16, 0xFF))
+		byteSum := b.NewAdd(spByte, eUnsigned16)
+
+		zFlag := constant.NewInt(types.I1, 0)
+		nFlag := constant.NewInt(types.I1, 0)
+		hFlag := b.NewICmp(enum.IPredUGE, lowSum, constant.NewInt(types.I16, 0x10))
+		cFlag := b.NewICmp(enum.IPredUGE, byteSum, constant.NewInt(types.I16, 0x100))
+
 		cg.updateReg16(b, hl, result)
-
-		// for finding carry bits:
-		// 	sum = lsb of sp + unsigned e
-		//  carry bits = (lsb of sp) ^ (unsigned e) ^ sum
-		spLow := b.NewTrunc(sp, types.I8)
-		spLow16 := b.NewZExt(spLow, types.I16)
-		e16u := b.NewZExt(p, types.I16)
-		sum16 := b.NewAdd(spLow16, e16u)
-		carryPerBit := b.NewXor(b.NewXor(spLow16, e16u), sum16)
-
-		hFlag := b.NewTrunc(b.NewLShr(carryPerBit, constant.NewInt(types.I64, 4)), types.I1)
-		cFlag := b.NewTrunc(b.NewLShr(carryPerBit, constant.NewInt(types.I64, 8)), types.I1)
-
-		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
-		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
+		b.NewStore(zFlag, cg.zFlag)
+		b.NewStore(nFlag, cg.nFlag)
 		b.NewStore(hFlag, cg.hFlag)
 		b.NewStore(cFlag, cg.cFlag)
 	})
@@ -371,6 +375,101 @@ func (cg *Codegen) dec_r16(instr *decoder.Instruction) *ir.Func {
 		cg.updateReg16(b, r16, val)
 	})
 }
+
+func (cg *Codegen) add_hl_r16(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		hl := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
+		reg := cg.findReg16GlobalDefs(b, instr.Reg16)
+
+		hlVal := cg.readReg16(b, hl)
+		regVal := cg.readReg16(b, reg)
+
+		hl32 := b.NewZExt(hlVal, types.I32)
+		reg32 := b.NewZExt(regVal, types.I32)
+
+		hlLow := b.NewAnd(hl32, constant.NewInt(types.I32, 0x0FFF))
+		regLow := b.NewAnd(reg32, constant.NewInt(types.I32, 0x0FFF))
+
+		sum32 := b.NewAdd(hl32, reg32)
+		lowSum := b.NewAdd(hlLow, regLow)
+
+		result := b.NewTrunc(sum32, types.I16)
+		hFlag := b.NewICmp(enum.IPredUGE, lowSum, constant.NewInt(types.I32, 0x1000))
+		cFlag := b.NewICmp(enum.IPredUGE, sum32, constant.NewInt(types.I32, 0x10000))
+
+		cg.updateReg16(b, hl, result)
+		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
+		b.NewStore(hFlag, cg.hFlag)
+		b.NewStore(cFlag, cg.cFlag)
+	})
+}
+
+func (cg *Codegen) add_sp_e(instr *decoder.Instruction) *ir.Func {
+	return cg.buildParamFunc(instr, ir.NewParam("e", types.I8), func(b *ir.Block, p *ir.Param) {
+		sp := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
+		spVal := cg.readReg16(b, sp)
+
+		eSigned16 := b.NewZExt(p, types.I16)
+		eUnsiged16 := b.NewZExt(p, types.I16)
+
+		result := b.NewAdd(spVal, eSigned16)
+
+		spLow := b.NewAnd(spVal, constant.NewInt(types.I16, 0x0F))
+		eLow := b.NewAnd(eUnsiged16, constant.NewInt(types.I16, 0x0F))
+		lowSum := b.NewAdd(spLow, eLow)
+
+		spByte := b.NewAnd(spVal, constant.NewInt(types.I16, 0xFF))
+		byteSum := b.NewAdd(spByte, eUnsiged16)
+
+		hFlag := b.NewICmp(enum.IPredUGE, lowSum, constant.NewInt(types.I16, 0x10))
+		cFlag := b.NewICmp(enum.IPredUGE, byteSum, constant.NewInt(types.I16, 0x100))
+
+		cg.updateReg16(b, sp, result)
+		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
+		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
+		b.NewStore(hFlag, cg.hFlag)
+		b.NewStore(cFlag, cg.cFlag)
+	})
+}
+
+// func (cg *Codegen) rlca(instr *decoder.Instruction) *ir.Func {
+// 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+// 		aVal := b.NewLoad(types.I8, cg.aReg)
+// 		leftShifted := b.NewShl(aVal, constant.NewInt(types.I8, 1))
+// 		lastBit := b.NewLShr(aVal, constant.NewInt(types.I8, 7))
+
+// 		result := b.NewOr(leftShifted, lastBit)
+
+// 		cFlag := b.NewICmp(enum.IPredEQ, lastBit, constant.NewInt(types.I8, 1))
+
+// 		b.NewStore(result, cg.aReg)
+// 		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
+// 		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
+// 		b.NewStore(constant.NewInt(types.I1, 0), cg.hFlag)
+// 		b.NewStore(cFlag, cg.cFlag)
+// 	})
+// }
+
+// func (cg *Codegen) rrca(instr *decoder.Instruction) *ir.Func {
+// 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+// 		aVal := b.NewLoad(types.I8, cg.aReg)
+// 		rightShifted := b.NewLShr(aVal, constant.NewInt(types.I8, 1))
+// 		firstBit := b.NewAnd(aVal, constant.NewInt(types.I8, 1))
+
+// 		result := b.NewOr(
+// 			b.NewShl(firstBit, constant.NewInt(types.I8, 7)),
+// 			rightShifted,
+// 		)
+
+// 		cFlag := b.NewICmp(enum.IPredEQ, firstBit, constant.NewInt(types.I8, 1))
+
+// 		b.NewStore(result, cg.aReg)
+// 		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
+// 		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
+// 		b.NewStore(constant.NewInt(types.I1, 0), cg.hFlag)
+// 		b.NewStore(cFlag, cg.cFlag)
+// 	})
+// }
 
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
