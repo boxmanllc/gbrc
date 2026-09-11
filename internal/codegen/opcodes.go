@@ -278,9 +278,11 @@ func (cg *Codegen) bit8_arithmetic_r8(instr *decoder.Instruction) *ir.Func {
 		}
 
 		cg.perform8BitArithmetic(b, opType, operand, bit8ArithemticConfig{
-			destType:           bit8DestReg,
-			destLocation:       dest,
 			toIncludeCarryFlag: toIncludeCarryFlag,
+			destConfig: destConfig{
+				destType:     destReg,
+				destLocation: dest,
+			},
 		})
 	})
 }
@@ -292,10 +294,10 @@ func (cg *Codegen) bit8_arithmetic_hl(instr *decoder.Instruction) *ir.Func {
 		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
 
 		dest := value.Value(cg.aReg)
-		destType := bit8DestReg
+		destType := destReg
 		if instr.InstructionType == decoder.INC_HL || instr.InstructionType == decoder.DEC_HL {
 			dest = hl
-			destType = bit8DestHL
+			destType = destHL
 		}
 
 		toIncludeCarryFlag := false
@@ -304,9 +306,11 @@ func (cg *Codegen) bit8_arithmetic_hl(instr *decoder.Instruction) *ir.Func {
 		}
 
 		cg.perform8BitArithmetic(b, opType, operand, bit8ArithemticConfig{
-			destType:           destType,
-			destLocation:       dest,
 			toIncludeCarryFlag: toIncludeCarryFlag,
+			destConfig: destConfig{
+				destType:     destType,
+				destLocation: dest,
+			},
 		})
 	})
 }
@@ -321,9 +325,11 @@ func (cg *Codegen) bit8_arithmetic_n(instr *decoder.Instruction) *ir.Func {
 		}
 
 		cg.perform8BitArithmetic(b, opType, p, bit8ArithemticConfig{
-			destType:           bit8DestReg,
-			destLocation:       cg.aReg,
 			toIncludeCarryFlag: toIncludeCarryFlag,
+			destConfig: destConfig{
+				destType:     destReg,
+				destLocation: cg.aReg,
+			},
 		})
 	})
 }
@@ -432,44 +438,50 @@ func (cg *Codegen) add_sp_e(instr *decoder.Instruction) *ir.Func {
 	})
 }
 
-// func (cg *Codegen) rlca(instr *decoder.Instruction) *ir.Func {
-// 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-// 		aVal := b.NewLoad(types.I8, cg.aReg)
-// 		leftShifted := b.NewShl(aVal, constant.NewInt(types.I8, 1))
-// 		lastBit := b.NewLShr(aVal, constant.NewInt(types.I8, 7))
+func (cg *Codegen) rotate(instr *decoder.Instruction) *ir.Func {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) {
+		var (
+			operand      value.Value
+			opType       rotateOp
+			destType     destType
+			destLocation value.Value
+		)
 
-// 		result := b.NewOr(leftShifted, lastBit)
+		if instr.Reg8Src == decoder.Reg8HLIndirect {
+			hl := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
+			hlVal := cg.readReg16(b, hl)
 
-// 		cFlag := b.NewICmp(enum.IPredEQ, lastBit, constant.NewInt(types.I8, 1))
+			operand = cg.readMemory(b, hlVal)
+			destType = destHL
+			destLocation = hlVal
+		} else {
+			reg := cg.findReg8GlobalDef(instr.Reg8Src)
 
-// 		b.NewStore(result, cg.aReg)
-// 		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
-// 		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
-// 		b.NewStore(constant.NewInt(types.I1, 0), cg.hFlag)
-// 		b.NewStore(cFlag, cg.cFlag)
-// 	})
-// }
+			operand = b.NewLoad(types.I8, reg)
+			destType = destReg
+			destLocation = reg
+		}
 
-// func (cg *Codegen) rrca(instr *decoder.Instruction) *ir.Func {
-// 	return cg.buildVoidFunc(instr, func(b *ir.Block) {
-// 		aVal := b.NewLoad(types.I8, cg.aReg)
-// 		rightShifted := b.NewLShr(aVal, constant.NewInt(types.I8, 1))
-// 		firstBit := b.NewAnd(aVal, constant.NewInt(types.I8, 1))
+		switch instr.InstructionType {
+		case decoder.RLA, decoder.CB_RL_R8, decoder.CB_RL_HL:
+			opType = rotateOpLeft
+		case decoder.RLCA, decoder.CB_RLC_R8, decoder.CB_RLC_HL:
+			opType = rotateOpLeftCircular
+		case decoder.RRA, decoder.CB_RR_R8, decoder.CB_RR_HL:
+			opType = rotateOpRight
+		case decoder.RRCA, decoder.CB_RRC_R8, decoder.CB_RRC_HL:
+			opType = rotateOpRightCircular
+		}
 
-// 		result := b.NewOr(
-// 			b.NewShl(firstBit, constant.NewInt(types.I8, 7)),
-// 			rightShifted,
-// 		)
-
-// 		cFlag := b.NewICmp(enum.IPredEQ, firstBit, constant.NewInt(types.I8, 1))
-
-// 		b.NewStore(result, cg.aReg)
-// 		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
-// 		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
-// 		b.NewStore(constant.NewInt(types.I1, 0), cg.hFlag)
-// 		b.NewStore(cFlag, cg.cFlag)
-// 	})
-// }
+		cg.performRotate(b, opType, operand, rotateConfig{
+			updateZeroFlag: instr.IsCbPrefixed,
+			destConfig: destConfig{
+				destType:     destType,
+				destLocation: destLocation,
+			},
+		})
+	})
+}
 
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)

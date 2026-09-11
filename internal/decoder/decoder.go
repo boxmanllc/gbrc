@@ -375,17 +375,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("ADD %s", instr.Reg8Src.String())
 	case 0x86:
 		instr.InstructionType = ADD_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "ADD (HL)"
 	case 0xC6:
 		instr.InstructionType = ADD_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "ADD n"
 	case 0x88, 0x89, 0x8A, 0x8B,
 		0x8C, 0x8D, 0x8F:
@@ -393,17 +396,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("ADC %s", instr.Reg8Src.String())
 	case 0x8E:
 		instr.InstructionType = ADC_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "ADC HL"
 	case 0xCE:
 		instr.InstructionType = ADC_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "ADC n"
 	case 0x90, 0x91, 0x92, 0x93,
 		0x94, 0x95, 0x97:
@@ -411,17 +417,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("SUB %s", instr.Reg8Src.String())
 	case 0x96:
 		instr.InstructionType = SUB_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "SUB (HL)"
 	case 0xD6:
 		instr.InstructionType = SUB_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "SUB n"
 	case 0x98, 0x99, 0x9A, 0x9B,
 		0x9C, 0x9D, 0x9F:
@@ -429,17 +438,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("SBC %s", instr.Reg8Src.String())
 	case 0x9E:
 		instr.InstructionType = SBC_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "SBC (HL)"
 	case 0xDE:
 		instr.InstructionType = SBC_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "SBC n"
 	case 0xB8, 0xB9, 0xBA, 0xBB,
 		0xBC, 0xBD, 0xBF:
@@ -465,11 +477,13 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Dest = instr.Reg8Src
 		instr.Mnemonic = fmt.Sprintf("INC %s", instr.Reg8Src.String())
 	case 0x34:
 		instr.InstructionType = INC_HL
 		instr.Length = 1
 		instr.BaseMCycles = 3
+		instr.Reg8Dest = Reg8HLIndirect
 		instr.Mnemonic = "INC (HL)"
 	case 0x05, 0x0D, 0x15, 0x1D,
 		0x25, 0x2D, 0x3D:
@@ -477,11 +491,13 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Dest = instr.Reg8Src
 		instr.Mnemonic = fmt.Sprintf("DEC %s", instr.Reg8Src.String())
 	case 0x35:
 		instr.InstructionType = DEC_HL
 		instr.Length = 1
 		instr.BaseMCycles = 3
+		instr.Reg8Dest = Reg8HLIndirect
 		instr.Mnemonic = "DEC (HL)"
 	case 0xA0, 0xA1, 0xA2, 0xA3,
 		0xA4, 0xA5, 0xA7:
@@ -489,17 +505,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("AND %s", instr.Reg8Src.String())
 	case 0xA6:
 		instr.InstructionType = AND_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "AND (HL)"
 	case 0xE6:
 		instr.InstructionType = AND_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "AND n"
 	case 0xB0, 0xB1, 0xB2, 0xB3,
 		0xB4, 0xB5, 0xB7:
@@ -507,17 +526,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("OR %s", instr.Reg8Src.String())
 	case 0xB6:
 		instr.InstructionType = OR_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "OR (HL)"
 	case 0xF6:
 		instr.InstructionType = OR_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "OR n"
 	case 0xA8, 0xA9, 0xAA, 0xAB,
 		0xAC, 0xAD, 0xAF:
@@ -525,17 +547,20 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 1
 		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("XOR %s", instr.Reg8Src.String())
 	case 0xAE:
 		instr.InstructionType = XOR_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "XOR (HL)"
 	case 0xEE:
 		instr.InstructionType = XOR_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
 		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = "XOR n"
 	case 0x3F:
 		instr.InstructionType = CCF
@@ -585,21 +610,25 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = RLCA
 		instr.Length = 1
 		instr.BaseMCycles = 1
+		instr.Reg8Src = Reg8A
 		instr.Mnemonic = "RLCA"
 	case 0x0F:
 		instr.InstructionType = RRCA
 		instr.Length = 1
 		instr.BaseMCycles = 1
+		instr.Reg8Src = Reg8A
 		instr.Mnemonic = "RRCA"
 	case 0x17:
 		instr.InstructionType = RLA
 		instr.Length = 1
 		instr.BaseMCycles = 1
+		instr.Reg8Src = Reg8A
 		instr.Mnemonic = "RLA"
 	case 0x1F:
 		instr.InstructionType = RRA
 		instr.Length = 1
 		instr.BaseMCycles = 1
+		instr.Reg8Src = Reg8A
 		instr.Mnemonic = "RRA"
 	case 0xC3:
 		instr.InstructionType = JP_NN
@@ -736,6 +765,7 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 		instr.InstructionType = group[1]
 		instr.Length = 2
 		instr.BaseMCycles = 4
+		instr.Reg8Src = Reg8HLIndirect
 		instr.Mnemonic = fmt.Sprintf("%s (HL)", baseMnemonic)
 	} else {
 		instr.InstructionType = group[0]

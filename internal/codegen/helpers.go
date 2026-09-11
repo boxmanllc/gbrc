@@ -14,7 +14,7 @@ import (
 
 type bit8ArithmeticOp int
 type rotateOp int
-type bit8ArithmeticDest int
+type destType int
 
 type reg16Store struct {
 	msb, lsb   value.Value // value of two 8-bit registers which are composed together to create 16-bit register
@@ -23,10 +23,19 @@ type reg16Store struct {
 	hasFlagReg bool        // whether F register is involved
 }
 
+type destConfig struct {
+	destType     destType
+	destLocation value.Value
+}
+
 type bit8ArithemticConfig struct {
-	destType           bit8ArithmeticDest
-	destLocation       value.Value
+	destConfig
 	toIncludeCarryFlag bool
+}
+
+type rotateConfig struct {
+	destConfig
+	updateZeroFlag bool
 }
 
 const (
@@ -48,8 +57,8 @@ const (
 )
 
 const (
-	bit8DestReg bit8ArithmeticDest = iota // store result in a register
-	bit8DestHL                            // store result in location pointed by (HL)
+	destReg destType = iota // store result in a register
+	destHL                  // store result in location pointed by (HL)
 )
 
 var (
@@ -335,9 +344,9 @@ func (cg *Codegen) perform8BitArithmetic(
 
 	if opType != bit8OpCompare {
 		switch cfg.destType {
-		case bit8DestReg:
+		case destReg:
 			irBlock.NewStore(result, cfg.destLocation)
-		case bit8DestHL:
+		case destHL:
 			cg.updateMemory(irBlock, cfg.destLocation, result)
 		}
 	}
@@ -349,6 +358,69 @@ func (cg *Codegen) perform8BitArithmetic(
 	if cFlag != nil {
 		irBlock.NewStore(cFlag, cg.cFlag)
 	}
+}
+
+func (cg *Codegen) performRotate(
+	irBlock *ir.Block, opType rotateOp,
+	operand value.Value, cfg rotateConfig,
+) {
+	var result value.Value
+	var zFlag, nFlag, hFlag, cFlag value.Value
+
+	switch opType {
+	case rotateOpLeft:
+		leftShifted := irBlock.NewShl(operand, constant.NewInt(types.I8, 1))
+		lastBit := irBlock.NewLShr(operand, constant.NewInt(types.I8, 7))
+		c8 := irBlock.NewZExt(cg.cFlag, types.I8)
+
+		result = irBlock.NewOr(leftShifted, c8)
+		cFlag = irBlock.NewTrunc(lastBit, types.I1)
+	case rotateOpLeftCircular:
+		leftShifted := irBlock.NewShl(operand, constant.NewInt(types.I8, 1))
+		lastBit := irBlock.NewLShr(operand, constant.NewInt(types.I8, 7))
+
+		result = irBlock.NewOr(leftShifted, lastBit)
+		cFlag = irBlock.NewTrunc(lastBit, types.I1)
+	case rotateOpRight:
+		rightShifted := irBlock.NewLShr(operand, constant.NewInt(types.I8, 1))
+		firstBit := irBlock.NewAnd(operand, constant.NewInt(types.I8, 1))
+
+		result = irBlock.NewOr(
+			irBlock.NewShl(firstBit, constant.NewInt(types.I8, 7)),
+			rightShifted,
+		)
+		cFlag = irBlock.NewTrunc(firstBit, types.I1)
+	case rotateOpRightCircular:
+		rightShifted := irBlock.NewLShr(operand, constant.NewInt(types.I8, 1))
+		firstBit := irBlock.NewAnd(operand, constant.NewInt(types.I8, 1))
+
+		result = irBlock.NewOr(
+			irBlock.NewShl(firstBit, constant.NewInt(types.I8, 7)),
+			rightShifted,
+		)
+		cFlag = irBlock.NewTrunc(firstBit, types.I1)
+	}
+
+	if cfg.updateZeroFlag {
+		zFlag = irBlock.NewICmp(enum.IPredNE, result, constant.NewInt(types.I8, 0))
+	} else {
+		zFlag = constant.NewInt(types.I1, 0)
+	}
+
+	nFlag = constant.NewInt(types.I1, 0)
+	hFlag = constant.NewInt(types.I1, 0)
+
+	switch cfg.destType {
+	case destReg:
+		irBlock.NewStore(result, cfg.destLocation)
+	case destHL:
+		cg.updateMemory(irBlock, cfg.destLocation, result)
+	}
+
+	irBlock.NewStore(zFlag, cg.zFlag)
+	irBlock.NewStore(nFlag, cg.nFlag)
+	irBlock.NewStore(hFlag, cg.hFlag)
+	irBlock.NewStore(cFlag, cg.cFlag)
 }
 
 func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block) {
