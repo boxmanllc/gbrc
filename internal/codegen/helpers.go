@@ -12,10 +12,6 @@ import (
 	"github.com/llir/llvm/ir/value"
 )
 
-type bit8ArithmeticOp int
-type rotateOp int
-type destType int
-
 type reg16Store struct {
 	msb, lsb   value.Value // value of two 8-bit registers which are composed together to create 16-bit register
 	val        value.Value // raw value of 16-bit register
@@ -23,47 +19,7 @@ type reg16Store struct {
 	hasFlagReg bool        // whether F register is involved
 }
 
-type destConfig struct {
-	destType     destType
-	destLocation value.Value
-}
-
-type bit8ArithemticConfig struct {
-	destConfig
-	toIncludeCarryFlag bool
-}
-
-type rotateConfig struct {
-	destConfig
-	updateZeroFlag bool
-}
-
-const (
-	bit8OpAdd bit8ArithmeticOp = iota
-	bit8OpSub
-	bit8OpCompare
-	bit8OpIncrease
-	bit8OpDecrease
-	bit8OpAnd
-	bit8OpOr
-	bit8OpXor
-)
-
-const (
-	rotateOpLeftCircular rotateOp = iota
-	rotateOpRightCircular
-	rotateOpLeft
-	rotateOpRight
-)
-
-const (
-	destReg destType = iota // store result in a register
-	destHL                  // store result in location pointed by (HL)
-)
-
-var (
-	mnemonicPat = regexp.MustCompile(`[ ,()]`)
-)
+var mnemonicPat = regexp.MustCompile(`[ ,()]`)
 
 func mnemonicToFuncName(mnemonic string) string {
 	return mnemonicPat.ReplaceAllString(mnemonic, "_")
@@ -83,61 +39,61 @@ func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.V
 	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
-func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) *ir.Global {
+func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) (*ir.Global, error) {
 	switch reg8 {
 	case decoder.Reg8A:
-		return cg.aReg
+		return cg.aReg, nil
 	case decoder.Reg8B:
-		return cg.bReg
+		return cg.bReg, nil
 	case decoder.Reg8C:
-		return cg.cReg
+		return cg.cReg, nil
 	case decoder.Reg8D:
-		return cg.dReg
+		return cg.dReg, nil
 	case decoder.Reg8E:
-		return cg.eReg
+		return cg.eReg, nil
 	case decoder.Reg8H:
-		return cg.hReg
+		return cg.hReg, nil
 	case decoder.Reg8L:
-		return cg.lReg
+		return cg.lReg, nil
 	default:
-		panic(fmt.Sprintf("cannot find llvm global def for %d reg8 type", reg8))
+		return nil, fmt.Errorf("cannot find llvm global def for %d reg8 type", reg8)
 	}
 }
 
-func (cg *Codegen) findReg16GlobalDefs(irBlock *ir.Block, reg16 decoder.Reg16) reg16Store {
+func (cg *Codegen) findReg16GlobalDefs(irBlock *ir.Block, reg16 decoder.Reg16) (reg16Store, error) {
 	switch reg16 {
 	case decoder.Reg16BC:
 		return reg16Store{
 			isSplitUp: true,
 			msb:       cg.bReg,
 			lsb:       cg.cReg,
-		}
+		}, nil
 	case decoder.Reg16DE:
 		return reg16Store{
 			isSplitUp: true,
 			msb:       cg.dReg,
 			lsb:       cg.eReg,
-		}
+		}, nil
 	case decoder.Reg16HL:
 		return reg16Store{
 			isSplitUp: true,
 			msb:       cg.hReg,
 			lsb:       cg.lReg,
-		}
+		}, nil
 	case decoder.Reg16AF:
 		return reg16Store{
 			isSplitUp:  true,
 			hasFlagReg: true,
 			msb:        cg.aReg,
 			lsb:        cg.buildFReg(irBlock),
-		}
+		}, nil
 	case decoder.Reg16SP:
 		return reg16Store{
 			isSplitUp: false,
 			val:       cg.sp,
-		}
+		}, nil
 	default:
-		panic(fmt.Sprintf("cannot find llvm global def for %d reg16 type", reg16))
+		return reg16Store{}, fmt.Errorf("cannot find llvm global def for %d reg16 type", reg16)
 	}
 }
 
@@ -147,7 +103,6 @@ func (cg *Codegen) readReg16(irBlock *ir.Block, reg16 reg16Store) value.Value {
 		var lsb16 *ir.InstZExt
 
 		if reg16.hasFlagReg {
-			// F register is built on the fly so additional load instruction isn't required
 			lsb16 = irBlock.NewZExt(reg16.lsb, types.I16)
 		} else {
 			lsbVal := irBlock.NewLoad(types.I8, reg16.lsb)
@@ -171,7 +126,6 @@ func (cg *Codegen) updateReg16(irBlock *ir.Block, reg16 reg16Store, newVal value
 		irBlock.NewStore(msbVal, reg16.msb)
 
 		if reg16.hasFlagReg {
-			// F register is not a single global register so this would update all the different global registers for individual flags
 			cg.updateFReg(irBlock, lsbVal)
 		} else {
 			irBlock.NewStore(lsbVal, reg16.lsb)
@@ -239,212 +193,45 @@ func (cg *Codegen) updateFReg(irBlock *ir.Block, val value.Value) {
 	irBlock.NewStore(c, cg.cFlag)
 }
 
-func (cg *Codegen) perform8BitArithmetic(
-	irBlock *ir.Block, opType bit8ArithmeticOp,
-	operand value.Value, cfg bit8ArithemticConfig,
-) {
-	var a, aVal, a16, operand16 value.Value
-	var result, nFlag, hFlag, cFlag value.Value
-
-	if opType != bit8OpIncrease && opType != bit8OpDecrease {
-		a = cg.findReg8GlobalDef(decoder.Reg8A)
-		aVal = irBlock.NewLoad(types.I8, a)
-	}
-
-	if opType == bit8OpAdd || opType == bit8OpSub || opType == bit8OpCompare {
-		a16 = irBlock.NewZExt(aVal, types.I16)
-		operand16 = irBlock.NewZExt(operand, types.I16)
-	}
-
-	c16 := value.Value(constant.NewInt(types.I16, 0))
-	if cfg.toIncludeCarryFlag {
-		cVal := irBlock.NewLoad(types.I1, cg.cFlag)
-		c16 = irBlock.NewZExt(cVal, types.I16)
-	}
-
-	switch opType {
-	case bit8OpAdd:
-		// stores result in A register
-		// flags:
-		// 	 z: result == 0
-		// 	 n: 0
-		// 	 h: (a & 0x0F) + (b & 0x0F) + c >= 0x10
-		// 	 c: result16 >= 0x100
-		result16 := irBlock.NewAdd(ir.NewAdd(a16, operand16), c16)
-
-		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
-		operandLow := irBlock.NewAnd(operand16, constant.NewInt(types.I16, 0x0F))
-		sumLow := irBlock.NewAdd(irBlock.NewAdd(aLow, operandLow), c16)
-
-		result = irBlock.NewTrunc(result16, types.I8)
-		nFlag = constant.NewInt(types.I1, 0)
-		hFlag = irBlock.NewICmp(enum.IPredUGE, sumLow, constant.NewInt(types.I16, 0x10))
-		cFlag = irBlock.NewICmp(enum.IPredUGE, result16, constant.NewInt(types.I16, 0x100))
-	case bit8OpSub, bit8OpCompare:
-		// stores result in A register
-		// flags:
-		//   z: result == 0
-		//   n: 1
-		//   h: (a & 0x0F) < (b & 0x0F) + c
-		//   c: a < b + c
-		result16 := irBlock.NewSub(irBlock.NewSub(a16, operand16), c16)
-
-		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
-		operandLow := irBlock.NewAnd(operand16, constant.NewInt(types.I16, 0x0F))
-		rhsLow := irBlock.NewAdd(operandLow, c16)
-		rhs := irBlock.NewAdd(operand16, c16)
-
-		result = irBlock.NewTrunc(result16, types.I8)
-		nFlag = constant.NewInt(types.I1, 1)
-		hFlag = irBlock.NewICmp(enum.IPredULT, aLow, rhsLow)
-		cFlag = irBlock.NewICmp(enum.IPredULT, a16, rhs)
-	case bit8OpIncrease:
-		// stores result in either source register or location pointed by (HL)
-		// flags:
-		//   z: result == 0
-		//   n: 0
-		//   h: (operand & 0x0F) + 1 >= 0x10
-		result = irBlock.NewAdd(operand, constant.NewInt(types.I8, 1))
-
-		operandLow := irBlock.NewAnd(operand, constant.NewInt(types.I8, 0x0F))
-		sumLow := irBlock.NewAdd(operandLow, constant.NewInt(types.I8, 1))
-
-		nFlag = constant.NewInt(types.I1, 0)
-		hFlag = irBlock.NewICmp(enum.IPredUGE, sumLow, constant.NewInt(types.I8, 0x10))
-	case bit8OpDecrease:
-		// stores result in either source register or location point by (HL)
-		// flags:
-		//   z: result == 0
-		//   n: 1
-		//   h: (operand & 0x0F) < 1
-		result = irBlock.NewSub(operand, constant.NewInt(types.I8, 1))
-
-		operandLow := irBlock.NewAnd(a, constant.NewInt(types.I8, 0x0F))
-
-		nFlag = constant.NewInt(types.I1, 1)
-		hFlag = irBlock.NewICmp(enum.IPredULT, operandLow, constant.NewInt(types.I8, 1))
-	case bit8OpAnd:
-		result = irBlock.NewAnd(a, operand)
-		nFlag = constant.NewInt(types.I1, 0)
-		hFlag = constant.NewInt(types.I1, 1)
-		cFlag = constant.NewInt(types.I1, 0)
-	case bit8OpOr:
-		result = irBlock.NewOr(a, operand)
-		nFlag = constant.NewInt(types.I1, 0)
-		hFlag = constant.NewInt(types.I1, 0)
-		cFlag = constant.NewInt(types.I1, 0)
-	case bit8OpXor:
-		result = irBlock.NewXor(a, operand)
-		nFlag = constant.NewInt(types.I1, 0)
-		hFlag = constant.NewInt(types.I1, 0)
-		cFlag = constant.NewInt(types.I1, 0)
-	}
-
-	zFlag := irBlock.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
-
-	if opType != bit8OpCompare {
-		switch cfg.destType {
-		case destReg:
-			irBlock.NewStore(result, cfg.destLocation)
-		case destHL:
-			cg.updateMemory(irBlock, cfg.destLocation, result)
-		}
-	}
-
-	irBlock.NewStore(zFlag, cg.zFlag)
-	irBlock.NewStore(nFlag, cg.nFlag)
-	irBlock.NewStore(hFlag, cg.hFlag)
-
-	if cFlag != nil {
-		irBlock.NewStore(cFlag, cg.cFlag)
-	}
+func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block) error) (*ir.Func, error) {
+	return cg.buildOpcodeFunc(instr, nil, func(b *ir.Block, _ *ir.Param) error {
+		return build(b)
+	})
 }
 
-func (cg *Codegen) performRotate(
-	irBlock *ir.Block, opType rotateOp,
-	operand value.Value, cfg rotateConfig,
-) {
-	var result value.Value
-	var zFlag, nFlag, hFlag, cFlag value.Value
+func (cg *Codegen) buildParamFunc(
+	instr *decoder.Instruction,
+	param *ir.Param,
+	build func(*ir.Block, *ir.Param) error,
+) (*ir.Func, error) {
+	return cg.buildOpcodeFunc(instr, param, build)
+}
 
-	switch opType {
-	case rotateOpLeft:
-		leftShifted := irBlock.NewShl(operand, constant.NewInt(types.I8, 1))
-		lastBit := irBlock.NewLShr(operand, constant.NewInt(types.I8, 7))
-		c8 := irBlock.NewZExt(cg.cFlag, types.I8)
-
-		result = irBlock.NewOr(leftShifted, c8)
-		cFlag = irBlock.NewTrunc(lastBit, types.I1)
-	case rotateOpLeftCircular:
-		leftShifted := irBlock.NewShl(operand, constant.NewInt(types.I8, 1))
-		lastBit := irBlock.NewLShr(operand, constant.NewInt(types.I8, 7))
-
-		result = irBlock.NewOr(leftShifted, lastBit)
-		cFlag = irBlock.NewTrunc(lastBit, types.I1)
-	case rotateOpRight:
-		rightShifted := irBlock.NewLShr(operand, constant.NewInt(types.I8, 1))
-		firstBit := irBlock.NewAnd(operand, constant.NewInt(types.I8, 1))
-
-		result = irBlock.NewOr(
-			irBlock.NewShl(firstBit, constant.NewInt(types.I8, 7)),
-			rightShifted,
-		)
-		cFlag = irBlock.NewTrunc(firstBit, types.I1)
-	case rotateOpRightCircular:
-		rightShifted := irBlock.NewLShr(operand, constant.NewInt(types.I8, 1))
-		firstBit := irBlock.NewAnd(operand, constant.NewInt(types.I8, 1))
-
-		result = irBlock.NewOr(
-			irBlock.NewShl(firstBit, constant.NewInt(types.I8, 7)),
-			rightShifted,
-		)
-		cFlag = irBlock.NewTrunc(firstBit, types.I1)
-	}
-
-	if cfg.updateZeroFlag {
-		zFlag = irBlock.NewICmp(enum.IPredNE, result, constant.NewInt(types.I8, 0))
+func (cg *Codegen) buildOpcodeFunc(
+	instr *decoder.Instruction,
+	param *ir.Param,
+	build func(*ir.Block, *ir.Param) error,
+) (*ir.Func, error) {
+	var fn *ir.Func
+	if param != nil {
+		fn = cg.module.NewFunc(mnemonicToFuncName(instr.Mnemonic), types.Void, param)
 	} else {
-		zFlag = constant.NewInt(types.I1, 0)
+		fn = cg.module.NewFunc(mnemonicToFuncName(instr.Mnemonic), types.Void)
 	}
 
-	nFlag = constant.NewInt(types.I1, 0)
-	hFlag = constant.NewInt(types.I1, 0)
-
-	switch cfg.destType {
-	case destReg:
-		irBlock.NewStore(result, cfg.destLocation)
-	case destHL:
-		cg.updateMemory(irBlock, cfg.destLocation, result)
+	entry := fn.NewBlock("entry")
+	if err := build(entry, param); err != nil {
+		return nil, err
 	}
-
-	irBlock.NewStore(zFlag, cg.zFlag)
-	irBlock.NewStore(nFlag, cg.nFlag)
-	irBlock.NewStore(hFlag, cg.hFlag)
-	irBlock.NewStore(cFlag, cg.cFlag)
+	cg.increaseCycles(instr, entry)
+	entry.NewRet(nil)
+	return fn, nil
 }
 
 func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block) {
 	cycles := irBlock.NewLoad(types.I32, cg.cycles)
 	cyclesInc := irBlock.NewAdd(cycles, constant.NewInt(types.I32, int64(instr.BaseMCycles)))
 	irBlock.NewStore(cyclesInc, cg.cycles)
-}
-
-func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block)) *ir.Func {
-	fn := cg.module.NewFunc(mnemonicToFuncName(instr.Mnemonic), types.Void)
-	entry := fn.NewBlock("entry")
-	build(entry)
-	cg.increaseCycles(instr, entry)
-	entry.NewRet(nil)
-	return fn
-}
-
-func (cg *Codegen) buildParamFunc(instr *decoder.Instruction, param *ir.Param, build func(*ir.Block, *ir.Param)) *ir.Func {
-	fn := cg.module.NewFunc(mnemonicToFuncName(instr.Mnemonic), types.Void, param)
-	entry := fn.NewBlock("entry")
-	build(entry, param)
-	cg.increaseCycles(instr, entry)
-	entry.NewRet(nil)
-	return fn
 }
 
 func (cg *Codegen) calculateHighPageAddress(irBlock *ir.Block, val value.Value) value.Value {
@@ -520,29 +307,4 @@ func (cg *Codegen) setupDebugFunc() {
 		zChar32, nChar32, hChar32, cChar32, cycles,
 	)
 	entry.NewRet(nil)
-}
-
-func (cg *Codegen) bit8ArithmeticInstrTypeToOpType(instr *decoder.Instruction) bit8ArithmeticOp {
-	switch instr.InstructionType {
-	case decoder.ADD_R8, decoder.ADD_HL, decoder.ADD_N,
-		decoder.ADC_R8, decoder.ADC_HL, decoder.ADC_N:
-		return bit8OpAdd
-	case decoder.SUB_R8, decoder.SUB_HL, decoder.SUB_N,
-		decoder.SBC_R8, decoder.SBC_HL, decoder.SBC_N:
-		return bit8OpSub
-	case decoder.CP_R8, decoder.CP_HL, decoder.CP_N:
-		return bit8OpCompare
-	case decoder.INC_R8, decoder.INC_HL:
-		return bit8OpIncrease
-	case decoder.DEC_R8, decoder.DEC_HL:
-		return bit8OpDecrease
-	case decoder.AND_R8, decoder.AND_HL, decoder.AND_N:
-		return bit8OpAnd
-	case decoder.OR_R8, decoder.OR_HL, decoder.OR_N:
-		return bit8OpOr
-	case decoder.XOR_R8, decoder.XOR_HL, decoder.XOR_N:
-		return bit8OpXor
-	}
-
-	panic(fmt.Sprintf("%d is not a 8-bit arithmetic opcode", instr.InstructionType))
 }

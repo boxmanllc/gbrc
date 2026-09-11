@@ -22,21 +22,21 @@ var (
 func Run() {
 	parseFlags()
 
-	rom, err := rom.Parse(romFilePath)
+	romFile, err := rom.Parse(romFilePath)
 	if err != nil {
 		log.Fatalf("failed to parse rom file: %s", err)
 	}
 
-	decoder := decoder.New(rom)
-	analyzer := analyzer.New(decoder)
-	blocks := analyzer.AnalyzeBlocks()
+	dec := decoder.New(romFile)
+	an := analyzer.New(dec)
+	blocks := an.AnalyzeBlocks()
 
-	codegen, err := codegen.New(blocks, debugFlag)
+	cg, err := codegen.New(blocks, debugFlag)
 	if err != nil {
 		log.Fatalf("failed to generate ir: %s", err)
 	}
 
-	if err := codegen.WriteTo(irFilePath); err != nil {
+	if err := cg.WriteTo(irFilePath); err != nil {
 		log.Fatalf("failed to write ir: %s", err)
 	}
 
