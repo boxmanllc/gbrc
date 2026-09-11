@@ -216,15 +216,15 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = LD_R8_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
-		instr.Reg8Dest = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
+		instr.Reg8Dest = reg8FromEncoding(opcode >> 3)
 		instr.Mnemonic = fmt.Sprintf("LD %s,%s", instr.Reg8Dest.String(), instr.Reg8Src.String())
 	case 0x06, 0x0E, 0x16, 0x1E,
 		0x26, 0x2E, 0x3E:
 		instr.InstructionType = LD_R8_N
 		instr.Length = 2
 		instr.BaseMCycles = 2
-		instr.Reg8Dest = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Dest = reg8FromEncoding(opcode >> 3)
 		instr.Imm8Bit = d.rom.Read(addr + 1)
 		instr.Mnemonic = fmt.Sprintf("LD %s,n", instr.Reg8Dest.String())
 	case 0x46, 0x4E, 0x56, 0x5E,
@@ -232,14 +232,14 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = LD_R8_HL
 		instr.Length = 1
 		instr.BaseMCycles = 2
-		instr.Reg8Dest = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Dest = reg8FromEncoding(opcode >> 3)
 		instr.Mnemonic = fmt.Sprintf("LD %s,(HL)", instr.Reg8Dest.String())
 	case 0x70, 0x71, 0x72, 0x73,
 		0x74, 0x75, 0x77:
 		instr.InstructionType = LD_HL_R8
 		instr.Length = 1
 		instr.BaseMCycles = 2
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Mnemonic = fmt.Sprintf("LD (HL),%s", instr.Reg8Src.String())
 	case 0x36:
 		instr.InstructionType = LD_HL_N
@@ -325,7 +325,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = LD_R16_NN
 		instr.Length = 3
 		instr.BaseMCycles = 3
-		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+		instr.Reg16 = reg16FromEncoding(opcode >> 4)
 		instr.Imm16Bit = utils.MergeBytes(d.rom.Read(addr+1), d.rom.Read(addr+2))
 		instr.Mnemonic = fmt.Sprintf("LD %s,NN", instr.Reg16.String())
 	case 0x08:
@@ -344,7 +344,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 4
 
-		reg16 := Reg16((opcode >> 4) & 0x03)
+		reg16 := reg16FromEncoding(opcode >> 4)
 		if opcode == 0xF5 { // PUSH AF
 			reg16 = Reg16AF
 		}
@@ -356,7 +356,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.Length = 1
 		instr.BaseMCycles = 3
 
-		reg16 := Reg16((opcode >> 4) & 0x03)
+		reg16 := reg16FromEncoding(opcode >> 4)
 		if opcode == 0xF1 { // POP AF
 			reg16 = Reg16AF
 		}
@@ -374,7 +374,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = ADD_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("ADD %s", instr.Reg8Src.String())
 	case 0x86:
@@ -395,7 +395,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = ADC_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("ADC %s", instr.Reg8Src.String())
 	case 0x8E:
@@ -416,7 +416,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = SUB_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("SUB %s", instr.Reg8Src.String())
 	case 0x96:
@@ -437,7 +437,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = SBC_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("SBC %s", instr.Reg8Src.String())
 	case 0x9E:
@@ -458,7 +458,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = CP_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Mnemonic = fmt.Sprintf("CP %s", instr.Reg8Src.String())
 	case 0xBE:
 		instr.InstructionType = CP_HL
@@ -476,7 +476,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = INC_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode >> 3)
 		instr.Reg8Dest = instr.Reg8Src
 		instr.Mnemonic = fmt.Sprintf("INC %s", instr.Reg8Src.String())
 	case 0x34:
@@ -490,7 +490,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = DEC_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8((opcode >> 3) & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode >> 3)
 		instr.Reg8Dest = instr.Reg8Src
 		instr.Mnemonic = fmt.Sprintf("DEC %s", instr.Reg8Src.String())
 	case 0x35:
@@ -504,7 +504,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = AND_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("AND %s", instr.Reg8Src.String())
 	case 0xA6:
@@ -525,7 +525,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = OR_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("OR %s", instr.Reg8Src.String())
 	case 0xB6:
@@ -546,7 +546,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = XOR_R8
 		instr.Length = 1
 		instr.BaseMCycles = 1
-		instr.Reg8Src = Reg8(opcode & 0x07)
+		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Reg8Dest = Reg8A
 		instr.Mnemonic = fmt.Sprintf("XOR %s", instr.Reg8Src.String())
 	case 0xAE:
@@ -586,19 +586,19 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.InstructionType = INC_R16
 		instr.Length = 1
 		instr.BaseMCycles = 2
-		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+		instr.Reg16 = reg16FromEncoding(opcode >> 4)
 		instr.Mnemonic = fmt.Sprintf("INC %s", instr.Reg16.String())
 	case 0x0B, 0x1B, 0x2B, 0x3B:
 		instr.InstructionType = DEC_R16
 		instr.Length = 1
 		instr.BaseMCycles = 2
-		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+		instr.Reg16 = reg16FromEncoding(opcode >> 4)
 		instr.Mnemonic = fmt.Sprintf("DEC %s", instr.Reg16.String())
 	case 0x09, 0x19, 0x29, 0x39:
 		instr.InstructionType = ADD_HL_R16
 		instr.Length = 1
 		instr.BaseMCycles = 2
-		instr.Reg16 = Reg16((opcode >> 4) & 0x03)
+		instr.Reg16 = reg16FromEncoding(opcode >> 4)
 		instr.Mnemonic = fmt.Sprintf("ADD HL,%s", instr.Reg16.String())
 	case 0xE8:
 		instr.InstructionType = ADD_SP_E
@@ -766,16 +766,62 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 		instr.Length = 2
 		instr.BaseMCycles = 4
 		instr.Reg8Src = Reg8HLIndirect
-		instr.Mnemonic = fmt.Sprintf("%s (HL)", baseMnemonic)
+
+		if opcode < 0x40 {
+			instr.Mnemonic = fmt.Sprintf("%s (HL)", baseMnemonic)
+		} else {
+			instr.Mnemonic = fmt.Sprintf("%s %d, (HL)", baseMnemonic, instr.BitOpIndex)
+		}
 	} else {
 		instr.InstructionType = group[0]
 		instr.Length = 2
 		instr.BaseMCycles = 2
-		instr.Reg8Src = Reg8(reg)
-		instr.Mnemonic = fmt.Sprintf("%s %s", baseMnemonic, instr.Reg8Src.String())
+		instr.Reg8Src = reg8FromEncoding(reg)
+
+		if opcode < 0x40 {
+			instr.Mnemonic = fmt.Sprintf("%s %s", baseMnemonic, instr.Reg8Src.String())
+		} else {
+			instr.Mnemonic = fmt.Sprintf("%s %d, %s", baseMnemonic, instr.BitOpIndex, instr.Reg8Src.String())
+		}
 	}
 
 	return instr
+}
+
+// reg8FromEncoding maps the 3-bit register encoding used in opcodes to Reg8.
+func reg8FromEncoding(enc uint8) Reg8 {
+	switch enc & 0x07 {
+	case 0:
+		return Reg8B
+	case 1:
+		return Reg8C
+	case 2:
+		return Reg8D
+	case 3:
+		return Reg8E
+	case 4:
+		return Reg8H
+	case 5:
+		return Reg8L
+	case 6:
+		return Reg8HLIndirect
+	default:
+		return Reg8A
+	}
+}
+
+// reg16FromEncoding maps the 2-bit register pair encoding used in opcodes to Reg16.
+func reg16FromEncoding(enc uint8) Reg16 {
+	switch enc & 0x03 {
+	case 0:
+		return Reg16BC
+	case 1:
+		return Reg16DE
+	case 2:
+		return Reg16HL
+	default:
+		return Reg16SP
+	}
 }
 
 func (r Reg8) String() string {

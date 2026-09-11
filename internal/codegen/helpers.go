@@ -117,6 +117,25 @@ func (cg *Codegen) readReg16(irBlock *ir.Block, reg16 reg16Store) value.Value {
 	}
 }
 
+func (cg *Codegen) resolveOperandAndDest(b *ir.Block, instr *decoder.Instruction) (value.Value, destType, value.Value, error) {
+	if instr.Reg8Src == decoder.Reg8HLIndirect {
+		hlReg, err := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+
+		hlVal := cg.readReg16(b, hlReg)
+		return cg.readMemory(b, hlVal), destHL, hlVal, nil
+	}
+
+	srcReg, err := cg.findReg8GlobalDef(instr.Reg8Src)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+
+	return b.NewLoad(types.I8, srcReg), destReg, srcReg, nil
+}
+
 func (cg *Codegen) updateReg16(irBlock *ir.Block, reg16 reg16Store, newVal value.Value) {
 	if reg16.isSplitUp {
 		msb16 := irBlock.NewLShr(newVal, constant.NewInt(types.I16, 8))

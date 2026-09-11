@@ -411,7 +411,10 @@ func (cg *Codegen) bit8_arithmetic_r8(instr *decoder.Instruction) (*ir.Func, err
 		}
 
 		operand := b.NewLoad(types.I8, srcReg)
-		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
+		opType, err := cg.bit8ArithmeticInstrTypeToOpType(instr)
+		if err != nil {
+			return err
+		}
 
 		dest := cg.aReg
 		if instr.InstructionType == decoder.INC_R8 || instr.InstructionType == decoder.DEC_R8 {
@@ -446,7 +449,10 @@ func (cg *Codegen) bit8_arithmetic_hl(instr *decoder.Instruction) (*ir.Func, err
 
 		hl := cg.readReg16(b, hlReg)
 		operand := cg.readMemory(b, hl)
-		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
+		opType, err := cg.bit8ArithmeticInstrTypeToOpType(instr)
+		if err != nil {
+			return err
+		}
 
 		dest := value.Value(cg.aReg)
 		destType := destReg
@@ -476,7 +482,10 @@ func (cg *Codegen) bit8_arithmetic_hl(instr *decoder.Instruction) (*ir.Func, err
 
 func (cg *Codegen) bit8_arithmetic_n(instr *decoder.Instruction) (*ir.Func, error) {
 	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) error {
-		opType := cg.bit8ArithmeticInstrTypeToOpType(instr)
+		opType, err := cg.bit8ArithmeticInstrTypeToOpType(instr)
+		if err != nil {
+			return err
+		}
 
 		toIncludeCarryFlag := false
 		if instr.InstructionType == decoder.ADC_N || instr.InstructionType == decoder.SBC_N {
@@ -617,54 +626,46 @@ func (cg *Codegen) add_sp_e(instr *decoder.Instruction) (*ir.Func, error) {
 	})
 }
 
-func (cg *Codegen) rotate(instr *decoder.Instruction) (*ir.Func, error) {
+func (cg *Codegen) bitwise(instr *decoder.Instruction) (*ir.Func, error) {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) error {
-		var (
-			operand      value.Value
-			opType       rotateOp
-			destType     destType
-			destLocation value.Value
-		)
-
-		if instr.Reg8Src == decoder.Reg8HLIndirect {
-			hlReg, err := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
-			if err != nil {
-				return err
-			}
-			hlVal := cg.readReg16(b, hlReg)
-
-			operand = cg.readMemory(b, hlVal)
-			destType = destHL
-			destLocation = hlVal
-		} else {
-			srcReg, err := cg.findReg8GlobalDef(instr.Reg8Src)
-			if err != nil {
-				return err
-			}
-
-			operand = b.NewLoad(types.I8, srcReg)
-			destType = destReg
-			destLocation = srcReg
+		operand, destType, destLocation, err := cg.resolveOperandAndDest(b, instr)
+		if err != nil {
+			return err
 		}
 
-		switch instr.InstructionType {
-		case decoder.RLA, decoder.CB_RL_R8, decoder.CB_RL_HL:
-			opType = rotateOpLeft
-		case decoder.RLCA, decoder.CB_RLC_R8, decoder.CB_RLC_HL:
-			opType = rotateOpLeftCircular
-		case decoder.RRA, decoder.CB_RR_R8, decoder.CB_RR_HL:
-			opType = rotateOpRight
-		case decoder.RRCA, decoder.CB_RRC_R8, decoder.CB_RRC_HL:
-			opType = rotateOpRightCircular
+		opType, err := cg.bitwiseOpFromInstrType(instr)
+		if err != nil {
+			return err
 		}
 
-		cg.performRotate(b, opType, operand, rotateConfig{
+		cg.performBitwise(b, opType, operand, bitwiseConfig{
 			updateZeroFlag: instr.IsCbPrefixed,
 			destConfig: destConfig{
 				destType:     destType,
 				destLocation: destLocation,
 			},
 		})
+		return nil
+	})
+}
+
+func (cg *Codegen) bit_op(instr *decoder.Instruction) (*ir.Func, error) {
+	return cg.buildParamFunc(instr, ir.NewParam("n", types.I8), func(b *ir.Block, p *ir.Param) error {
+		operand, destType, destLocation, err := cg.resolveOperandAndDest(b, instr)
+		if err != nil {
+			return err
+		}
+
+		opType, err := cg.bitOpFromInstrType(instr)
+		if err != nil {
+			return err
+		}
+
+		cg.performBitOp(b, opType, p, operand, destConfig{
+			destType:     destType,
+			destLocation: destLocation,
+		})
+
 		return nil
 	})
 }

@@ -225,8 +225,16 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*function, error
 		case decoder.RLCA, decoder.RRCA, decoder.RLA,
 			decoder.RRA, decoder.CB_RLC_R8, decoder.CB_RLC_HL,
 			decoder.CB_RRC_R8, decoder.CB_RRC_HL, decoder.CB_RL_R8,
-			decoder.CB_RL_HL, decoder.CB_RR_R8, decoder.CB_RR_HL:
-			irFunc, err = cg.rotate(instr)
+			decoder.CB_RL_HL, decoder.CB_RR_R8, decoder.CB_RR_HL,
+			decoder.CB_SLA_R8, decoder.CB_SLA_HL,
+			decoder.CB_SRA_R8, decoder.CB_SRA_HL,
+			decoder.CB_SRL_R8, decoder.CB_SRL_HL,
+			decoder.CB_SWAP_R8, decoder.CB_SWAP_HL:
+			irFunc, err = cg.bitwise(instr)
+		case decoder.CB_BIT_R8, decoder.CB_BIT_HL,
+			decoder.CB_RES_R8, decoder.CB_RES_HL,
+			decoder.CB_SET_R8, decoder.CB_SET_HL:
+			irFunc, err = cg.bit_op(instr)
 		default:
 			return nil, fmt.Errorf("cannot emit opcode function ir. unknown instruction type: %d", instr.InstructionType)
 		}
@@ -246,6 +254,10 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*function, error
 		decoder.SUB_N, decoder.SBC_N, decoder.CP_N,
 		decoder.AND_N, decoder.OR_N, decoder.XOR_N:
 		args = []value.Value{constant.NewInt(types.I8, int64(instr.Imm8Bit))}
+	case decoder.CB_BIT_R8, decoder.CB_BIT_HL,
+		decoder.CB_RES_R8, decoder.CB_RES_HL,
+		decoder.CB_SET_R8, decoder.CB_SET_HL:
+		args = []value.Value{constant.NewInt(types.I8, int64(instr.BitOpIndex))}
 	case decoder.LD_A_NN, decoder.LD_NN_A,
 		decoder.LD_R16_NN, decoder.LD_NN_SP:
 		args = []value.Value{constant.NewInt(types.I16, int64(instr.Imm16Bit))}
