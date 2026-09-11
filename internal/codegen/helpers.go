@@ -32,10 +32,16 @@ func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 }
 
 func (cg *Codegen) readMemory(irBlock *ir.Block, addr value.Value) value.Value {
-	return irBlock.NewLoad(types.I8, cg.getRamPtr(irBlock, addr))
+	isIO := irBlock.NewICmp(enum.IPredUGE, addr, constant.NewInt(types.I16, 0xFF00))
+	inlineVal := irBlock.NewLoad(types.I8, cg.getRamPtr(irBlock, addr))
+	ioVal := irBlock.NewCall(cg.readRam, addr)
+	return irBlock.NewSelect(isIO, ioVal, inlineVal)
 }
 
 func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
+	// keep @ram in sync and let the runtime handle i/o register semantics
+	// (joypad select, LY stub, etc.).
+	irBlock.NewCall(cg.writeRam, addr, val)
 	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
@@ -258,11 +264,77 @@ func (cg *Codegen) calculateHighPageAddress(irBlock *ir.Block, val value.Value) 
 	return irBlock.NewAdd(constant.NewInt(types.I16, 0xFF00), val16)
 }
 
+func (cg *Codegen) calculateRelativeJumpAddress(instr *decoder.Instruction) uint16 {
+	return uint16(int16(instr.Address) + int16(instr.Length) + int16(int8(instr.Imm8Bit)))
+}
+
+// loadCondition returns an i1 value which is true when the given jump
+// condition is satisfied.
+func (cg *Codegen) loadCondition(irBlock *ir.Block, cond decoder.JumpCondition) value.Value {
+	switch cond {
+	case decoder.C:
+		return irBlock.NewLoad(types.I1, cg.cFlag)
+	case decoder.NC:
+		return irBlock.NewXor(irBlock.NewLoad(types.I1, cg.cFlag), constant.NewInt(types.I1, 1))
+	case decoder.Z:
+		return irBlock.NewLoad(types.I1, cg.zFlag)
+	default: // NZ
+		return irBlock.NewXor(irBlock.NewLoad(types.I1, cg.zFlag), constant.NewInt(types.I1, 1))
+	}
+}
+
+// pushReturnAddress pushes the two bytes of the return address on the stack,
+// mirroring the PUSH r16 behaviour.
+func (cg *Codegen) pushReturnAddress(irBlock *ir.Block, retAddr value.Value) error {
+	sp, err := cg.findReg16GlobalDefs(irBlock, decoder.Reg16SP)
+	if err != nil {
+		return err
+	}
+
+	spVal := cg.readReg16(irBlock, sp)
+
+	msb := irBlock.NewTrunc(irBlock.NewLShr(retAddr, constant.NewInt(types.I16, 8)), types.I8)
+	lsb := irBlock.NewTrunc(retAddr, types.I8)
+
+	spVal = irBlock.NewSub(spVal, constant.NewInt(types.I16, 1))
+	cg.updateReg16(irBlock, sp, spVal)
+	cg.updateMemory(irBlock, spVal, msb)
+
+	spVal = irBlock.NewSub(spVal, constant.NewInt(types.I16, 1))
+	cg.updateReg16(irBlock, sp, spVal)
+	cg.updateMemory(irBlock, spVal, lsb)
+
+	return nil
+}
+
+// popReturnAddress pops the two bytes of the return address from the stack,
+// mirroring the POP r16 behaviour.
+func (cg *Codegen) popReturnAddress(irBlock *ir.Block) (value.Value, error) {
+	sp, err := cg.findReg16GlobalDefs(irBlock, decoder.Reg16SP)
+	if err != nil {
+		return nil, err
+	}
+
+	spVal := cg.readReg16(irBlock, sp)
+
+	lsb := cg.readMemory(irBlock, spVal)
+	spVal = irBlock.NewAdd(spVal, constant.NewInt(types.I16, 1))
+	cg.updateReg16(irBlock, sp, spVal)
+
+	msb := cg.readMemory(irBlock, spVal)
+	spVal = irBlock.NewAdd(spVal, constant.NewInt(types.I16, 1))
+	cg.updateReg16(irBlock, sp, spVal)
+
+	lsb16 := irBlock.NewZExt(lsb, types.I16)
+	msb16 := irBlock.NewZExt(msb, types.I16)
+	return irBlock.NewOr(irBlock.NewShl(msb16, constant.NewInt(types.I16, 8)), lsb16), nil
+}
+
 func (cg *Codegen) setupDebugFunc() {
 	printfFunc := cg.module.NewFunc("printf", types.I32, ir.NewParam("", types.NewPointer(types.I8)))
 	printfFunc.Sig.Variadic = true
 
-	fmtStr := constant.NewCharArrayFromString("A=%02X B=%02X C=%02X D=%02X E=%02X H=%02X L=%02X F=%c%c%c%c cycles=%d\n\x00")
+	fmtStr := constant.NewCharArrayFromString("A=%02X B=%02X C=%02X D=%02X E=%02X H=%02X L=%02X F=%c%c%c%c cycles=%d pc=%04X\n\x00")
 	fmtGlobal := cg.module.NewGlobalDef("fmt", fmtStr)
 	fmtGlobal.Linkage = enum.LinkagePrivate
 	fmtGlobal.Immutable = true
@@ -317,13 +389,14 @@ func (cg *Codegen) setupDebugFunc() {
 	e32 := entry.NewZExt(eReg, types.I32)
 	h32 := entry.NewZExt(hReg, types.I32)
 	l32 := entry.NewZExt(lReg, types.I32)
+	pc32 := entry.NewZExt(entry.NewLoad(types.I16, cg.pc), types.I32)
 
 	zero := constant.NewInt(types.I32, 0)
 	fmtPtr := entry.NewGetElementPtr(fmtStr.Type(), fmtGlobal, zero, zero)
 
 	entry.NewCall(printfFunc, fmtPtr,
 		a32, b32, c32, d32, e32, h32, l32,
-		zChar32, nChar32, hChar32, cChar32, cycles,
+		zChar32, nChar32, hChar32, cChar32, cycles, pc32,
 	)
 	entry.NewRet(nil)
 }

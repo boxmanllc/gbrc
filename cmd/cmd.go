@@ -31,7 +31,7 @@ func Run() {
 	an := analyzer.New(dec)
 	blocks := an.AnalyzeBlocks()
 
-	cg, err := codegen.New(blocks, debugFlag)
+	cg, err := codegen.New(blocks, romFile.Bytes(), debugFlag)
 	if err != nil {
 		log.Fatalf("failed to generate ir: %s", err)
 	}
@@ -47,7 +47,12 @@ func Run() {
 	}
 
 	if toCompile {
-		if _, err := exec.Command("clang", "-O0", "-g", irFilePath, "-o", outFilePath).Output(); err != nil {
+		if _, err := exec.Command("clang", "-O0", "-g",
+			"-Iruntime/include",
+			irFilePath,
+			"runtime/src/main.c", "runtime/src/ram.c",
+			"runtime/src/joypad.c", "runtime/src/interrupt.c",
+			"-o", outFilePath).Output(); err != nil {
 			log.Fatalf("failed to compile ir: %s", err)
 		}
 	}

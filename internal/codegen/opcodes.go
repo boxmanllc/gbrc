@@ -349,25 +349,7 @@ func (cg *Codegen) push_r16(instr *decoder.Instruction) (*ir.Func, error) {
 			return err
 		}
 
-		sp, err := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
-		if err != nil {
-			return err
-		}
-
-		spVal := cg.readReg16(b, sp)
-
-		spVal = b.NewSub(spVal, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, sp, spVal)
-
-		msbVal := b.NewLoad(types.I8, r16.msb)
-		cg.updateMemory(b, spVal, msbVal)
-
-		spVal = b.NewSub(spVal, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, sp, spVal)
-
-		lsbVal := b.NewLoad(types.I8, r16.lsb)
-		cg.updateMemory(b, spVal, lsbVal)
-		return nil
+		return cg.pushReturnAddress(b, cg.readReg16(b, r16))
 	})
 }
 
@@ -378,27 +360,12 @@ func (cg *Codegen) pop_r16(instr *decoder.Instruction) (*ir.Func, error) {
 			return err
 		}
 
-		sp, err := cg.findReg16GlobalDefs(b, decoder.Reg16SP)
+		val, err := cg.popReturnAddress(b)
 		if err != nil {
 			return err
 		}
 
-		spVal := cg.readReg16(b, sp)
-
-		lsb := cg.readMemory(b, spVal)
-		spVal = b.NewAdd(spVal, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, sp, spVal)
-
-		msb := cg.readMemory(b, spVal)
-		spVal = b.NewAdd(spVal, constant.NewInt(types.I16, 1))
-		cg.updateReg16(b, sp, spVal)
-
-		lsb16 := b.NewZExt(lsb, types.I16)
-		msb16 := b.NewZExt(msb, types.I16)
-		msbShifted := b.NewShl(msb16, constant.NewInt(types.I16, 8))
-		newVal := b.NewOr(msbShifted, lsb16)
-
-		cg.updateReg16(b, r16, newVal)
+		cg.updateReg16(b, r16, val)
 		return nil
 	})
 }
@@ -538,6 +505,44 @@ func (cg *Codegen) cpl(instr *decoder.Instruction) (*ir.Func, error) {
 	})
 }
 
+func (cg *Codegen) daa(instr *decoder.Instruction) (*ir.Func, error) {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) error {
+		a := b.NewLoad(types.I8, cg.aReg)
+		n := b.NewLoad(types.I1, cg.nFlag)
+		h := b.NewLoad(types.I1, cg.hFlag)
+		c := b.NewLoad(types.I1, cg.cFlag)
+
+		lowNibble := b.NewAnd(a, constant.NewInt(types.I8, 0x0F))
+		lowGt9 := b.NewICmp(enum.IPredUGT, lowNibble, constant.NewInt(types.I8, 0x09))
+		adjLo := b.NewOr(h, lowGt9)
+		adjLoVal := b.NewSelect(adjLo, constant.NewInt(types.I8, 0x06), constant.NewInt(types.I8, 0x00))
+
+		aGt99 := b.NewICmp(enum.IPredUGT, a, constant.NewInt(types.I8, 0x99))
+		adjHi := b.NewOr(c, aGt99)
+		adjHiVal := b.NewSelect(adjHi, constant.NewInt(types.I8, 0x60), constant.NewInt(types.I8, 0x00))
+
+		addResult := b.NewAdd(a, adjLoVal)
+		addResult = b.NewAdd(addResult, adjHiVal)
+
+		subLoVal := b.NewSelect(h, constant.NewInt(types.I8, 0x06), constant.NewInt(types.I8, 0x00))
+		subHiVal := b.NewSelect(c, constant.NewInt(types.I8, 0x60), constant.NewInt(types.I8, 0x00))
+		subResult := b.NewSub(a, subHiVal)
+		subResult = b.NewSub(subResult, subLoVal)
+
+		result := b.NewSelect(n, subResult, addResult)
+
+		z := b.NewICmp(enum.IPredEQ, result, constant.NewInt(types.I8, 0))
+		newC := b.NewSelect(n, c, adjHi)
+
+		b.NewStore(result, cg.aReg)
+		b.NewStore(z, cg.zFlag)
+		b.NewStore(n, cg.nFlag)
+		b.NewStore(constant.NewInt(types.I1, 0), cg.hFlag)
+		b.NewStore(newC, cg.cFlag)
+		return nil
+	})
+}
+
 func (cg *Codegen) inc_r16(instr *decoder.Instruction) (*ir.Func, error) {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) error {
 		r16, err := cg.findReg16GlobalDefs(b, instr.Reg16)
@@ -670,13 +675,229 @@ func (cg *Codegen) bit_op(instr *decoder.Instruction) (*ir.Func, error) {
 	})
 }
 
+func (cg *Codegen) di(instr *decoder.Instruction) (*ir.Func, error) {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) error { return nil })
+}
+
+func (cg *Codegen) ei(instr *decoder.Instruction) (*ir.Func, error) {
+	return cg.buildVoidFunc(instr, func(b *ir.Block) error { return nil })
+}
+
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
+
 	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
 	if !ok {
-		return fmt.Errorf("cannot find jp nn destination block")
+		// out-of-image target: dispatch at runtime
+		irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
+		irBlock.NewBr(cg.retDispatchBlock)
+		return nil
 	}
 
+	irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
+	irBlock.NewBr(toBlock)
+	return nil
+}
+
+func (cg *Codegen) jp_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
+	if !ok {
+		return fmt.Errorf("cannot find jp cc nn fallthrough block")
+	}
+
+	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
+	if !ok {
+		toBlock = cg.retDispatchBlock
+	}
+
+	cond := cg.loadCondition(irBlock, instr.JumpCondition)
+	nextPC := irBlock.NewSelect(
+		cond,
+		constant.NewInt(types.I16, int64(instr.Imm16Bit)),
+		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
+	)
+	irBlock.NewStore(nextPC, cg.pc)
+	irBlock.NewCondBr(cond, toBlock, fallthroughBlock)
+	return nil
+}
+
+func (cg *Codegen) jr_e(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	target := cg.calculateRelativeJumpAddress(instr)
+	toBlock, ok := cg.irBlocks[target]
+	if !ok {
+		return fmt.Errorf("cannot find jr e destination block")
+	}
+
+	irBlock.NewStore(constant.NewInt(types.I16, int64(target)), cg.pc)
+	irBlock.NewBr(toBlock)
+	return nil
+}
+
+func (cg *Codegen) jr_cc_e(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	target := cg.calculateRelativeJumpAddress(instr)
+	toBlock, ok := cg.irBlocks[target]
+	if !ok {
+		return fmt.Errorf("cannot find jr cc e destination block")
+	}
+
+	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
+	if !ok {
+		return fmt.Errorf("cannot find jr cc e fallthrough block")
+	}
+
+	cond := cg.loadCondition(irBlock, instr.JumpCondition)
+	nextPC := irBlock.NewSelect(
+		cond,
+		constant.NewInt(types.I16, int64(target)),
+		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
+	)
+	irBlock.NewStore(nextPC, cg.pc)
+	irBlock.NewCondBr(cond, toBlock, fallthroughBlock)
+	return nil
+}
+
+func (cg *Codegen) call_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	retAddr := constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length))
+	if err := cg.pushReturnAddress(irBlock, retAddr); err != nil {
+		return err
+	}
+
+	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
+	if !ok {
+		// out-of-image (e.g. hram) callsite: dispatch at runtime
+		irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
+		irBlock.NewBr(cg.retDispatchBlock)
+		return nil
+	}
+
+	irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
+	irBlock.NewBr(toBlock)
+	return nil
+}
+
+func (cg *Codegen) call_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
+	if !ok {
+		return fmt.Errorf("cannot find call cc nn fallthrough block for 0x%04X", instr.Address)
+	}
+
+	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
+	if !ok {
+		toBlock = cg.retDispatchBlock
+	}
+
+	cond := cg.loadCondition(irBlock, instr.JumpCondition)
+	nextPC := irBlock.NewSelect(
+		cond,
+		constant.NewInt(types.I16, int64(instr.Imm16Bit)),
+		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
+	)
+	irBlock.NewStore(nextPC, cg.pc)
+	takenBlock := cg.main.NewBlock(fmt.Sprintf("call_taken_%04X", instr.Address))
+	irBlock.NewCondBr(cond, takenBlock, fallthroughBlock)
+
+	retAddr := constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length))
+	if err := cg.pushReturnAddress(takenBlock, retAddr); err != nil {
+		return err
+	}
+
+	takenBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
+	takenBlock.NewBr(toBlock)
+	return nil
+}
+
+func (cg *Codegen) ret(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	if cg.retDispatchBlock == nil {
+		return fmt.Errorf("return dispatch block is not set up")
+	}
+
+	retAddr, err := cg.popReturnAddress(irBlock)
+	if err != nil {
+		return err
+	}
+
+	irBlock.NewStore(retAddr, cg.pc)
+	irBlock.NewBr(cg.retDispatchBlock)
+	return nil
+}
+
+func (cg *Codegen) ret_cc(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	if cg.retDispatchBlock == nil {
+		return fmt.Errorf("return dispatch block is not set up")
+	}
+
+	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
+	if !ok {
+		return fmt.Errorf("cannot find ret cc fallthrough block")
+	}
+
+	cond := cg.loadCondition(irBlock, instr.JumpCondition)
+	takenBlock := cg.main.NewBlock(fmt.Sprintf("ret_taken_%04X", instr.Address))
+	skipBlock := cg.main.NewBlock(fmt.Sprintf("ret_skip_%04X", instr.Address))
+	skipBlock.NewStore(constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)), cg.pc)
+	skipBlock.NewBr(fallthroughBlock)
+	irBlock.NewCondBr(cond, takenBlock, skipBlock)
+
+	retAddr, err := cg.popReturnAddress(takenBlock)
+	if err != nil {
+		return err
+	}
+
+	takenBlock.NewStore(retAddr, cg.pc)
+	takenBlock.NewBr(cg.retDispatchBlock)
+	return nil
+}
+
+// jp_hl jumps to the address currently held in HL. Since the target is
+// computed at runtime, it is resolved via the return dispatch chain.
+func (cg *Codegen) jp_hl(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	if cg.retDispatchBlock == nil {
+		return fmt.Errorf("return dispatch block is not set up")
+	}
+
+	hl, err := cg.findReg16GlobalDefs(irBlock, decoder.Reg16HL)
+	if err != nil {
+		return err
+	}
+
+	hlVal := cg.readReg16(irBlock, hl)
+	irBlock.NewStore(hlVal, cg.pc)
+	irBlock.NewBr(cg.retDispatchBlock)
+	return nil
+}
+
+// rst_n pushes the return address and jumps to the fixed rst vector, like a
+// call to a known address.
+func (cg *Codegen) rst_n(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	toBlock, ok := cg.irBlocks[instr.CallFunctionAddress]
+	if !ok {
+		return fmt.Errorf("cannot find rst nn destination block")
+	}
+
+	retAddr := constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length))
+	if err := cg.pushReturnAddress(irBlock, retAddr); err != nil {
+		return err
+	}
+
+	irBlock.NewStore(constant.NewInt(types.I16, int64(instr.CallFunctionAddress)), cg.pc)
 	irBlock.NewBr(toBlock)
 	return nil
 }

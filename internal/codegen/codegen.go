@@ -8,6 +8,7 @@ import (
 	"github.com/0xmukesh/boxman/internal/decoder"
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
+	"github.com/llir/llvm/ir/enum"
 	"github.com/llir/llvm/ir/types"
 	"github.com/llir/llvm/ir/value"
 )
@@ -19,17 +20,23 @@ type Codegen struct {
 	instrFuncs map[string]*ir.Func  // mapping mnemonic to opcode's ir function
 	irBlocks   map[uint16]*ir.Block // mapping block start address to ir block element
 
+	// retDispatchBlock is a chain of blocks which dispatches the popped return
+	// address (stored in pc) to the corresponding basic block
+	retDispatchBlock *ir.Block
+
 	ram                                      *ir.Global
 	cycles                                   *ir.Global
 	aReg, bReg, cReg, dReg, eReg, hReg, lReg *ir.Global // registers
 	zFlag, nFlag, hFlag, cFlag               *ir.Global // individual bit flags
-	sp                                       *ir.Global // stack pointer
+	pc, sp                                   *ir.Global // stack pointer
 
 	readRam  *ir.Func // helper for read_ram() called in runtime
 	writeRam *ir.Func // helper for write_ram() called in runtime
 
 	debug     bool
 	debugFunc *ir.Func
+
+	romBytes []byte // raw rom image copied into @ram
 }
 
 type function struct {
@@ -37,14 +44,15 @@ type function struct {
 	args   []value.Value
 }
 
-func New(blocks []*analyzer.Block, debug bool) (*Codegen, error) {
+func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error) {
 	cg := &Codegen{
 		instrFuncs: make(map[string]*ir.Func),
 		irBlocks:   make(map[uint16]*ir.Block),
+		romBytes:   romBytes,
 	}
 
 	cg.module = ir.NewModule()
-	cg.main = cg.module.NewFunc("main", types.I32)
+	cg.main = cg.module.NewFunc("rom_main", types.I32)
 	cg.debug = debug
 
 	cg.emitGlobals()
@@ -52,14 +60,14 @@ func New(blocks []*analyzer.Block, debug bool) (*Codegen, error) {
 		cg.setupDebugFunc()
 	}
 
-	// NOTE: we're only considering blocks starting from rom entry atm
-	// FIXME: need to consider blocks before rom entry which includes various interrupt handlers
-	var blocksToProcess []*analyzer.Block
-	for _, block := range blocks {
-		if block.Start >= analyzer.ROM_ENTRY {
-			blocksToProcess = append(blocksToProcess, block)
-		}
-	}
+	// a dedicated entry block is created first so that block_0000 (a valid
+	// return-dispatch target) is not also the function's entry point.
+	bootEntry := cg.main.NewBlock("boot_entry")
+
+	// all blocks are emitted, including the interrupt vector and rst handler
+	// blocks below the rom entry point, so the compiled program starts
+	// executing from address 0x0000 like real hardware.
+	blocksToProcess := blocks
 
 	for _, block := range blocksToProcess {
 		if err := cg.emitBlock(block); err != nil {
@@ -67,10 +75,26 @@ func New(blocks []*analyzer.Block, debug bool) (*Codegen, error) {
 		}
 	}
 
+	// the return dispatcher is always set up since ret/reti/jp (hl) and
+	// out-of-image call/jp targets resolve their destination at runtime.
+	if err := cg.setupReturnDispatcher(blocksToProcess); err != nil {
+		return nil, err
+	}
+
 	for _, block := range blocksToProcess {
 		if err := cg.joinBlocks(block); err != nil {
 			return nil, err
 		}
+	}
+
+	if len(blocksToProcess) > 0 {
+		first, ok := cg.irBlocks[blocksToProcess[0].Start]
+		if !ok {
+			return nil, fmt.Errorf("can't find first block 0x%04X", blocksToProcess[0].Start)
+		}
+		bootEntry.NewBr(first)
+	} else {
+		bootEntry.NewRet(constant.NewInt(types.I32, 0))
 	}
 
 	return cg, nil
@@ -81,7 +105,9 @@ func (cg *Codegen) WriteTo(filepath string) error {
 }
 
 func (cg *Codegen) emitGlobals() {
-	cg.ram = cg.module.NewGlobalDef("ram", constant.NewZeroInitializer(types.NewArray(0x10000, types.I8)))
+	image := make([]byte, 0x10000)
+	copy(image, cg.romBytes)
+	cg.ram = cg.module.NewGlobalDef("ram", constant.NewCharArray(image))
 	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 
 	cg.aReg = cg.module.NewGlobalDef("a_reg", constant.NewInt(types.I8, 0))
@@ -97,6 +123,7 @@ func (cg *Codegen) emitGlobals() {
 	cg.hFlag = cg.module.NewGlobalDef("h_flag", constant.NewBool(false))
 	cg.cFlag = cg.module.NewGlobalDef("c_flag", constant.NewBool(false))
 
+	cg.pc = cg.module.NewGlobalDef("pc", constant.NewInt(types.I16, 0))
 	cg.sp = cg.module.NewGlobalDef("sp", constant.NewInt(types.I16, 0))
 
 	cg.readRam = cg.module.NewFunc("read_ram", types.I8, ir.NewParam("addr", types.I16))
@@ -130,6 +157,10 @@ func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) error {
 		}
 
 		irBlock.NewCall(fn.irFunc, fn.args...)
+
+		pcVal := irBlock.NewLoad(types.I16, cg.pc)
+		pcInc := irBlock.NewAdd(pcVal, constant.NewInt(types.I16, int64(instr.Length)))
+		irBlock.NewStore(pcInc, cg.pc)
 	}
 
 	return nil
@@ -214,6 +245,12 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*function, error
 			irFunc, err = cg.scf(instr)
 		case decoder.CPL:
 			irFunc, err = cg.cpl(instr)
+		case decoder.DAA:
+			irFunc, err = cg.daa(instr)
+		case decoder.DI:
+			irFunc, err = cg.di(instr)
+		case decoder.EI:
+			irFunc, err = cg.ei(instr)
 		case decoder.INC_R16:
 			irFunc, err = cg.inc_r16(instr)
 		case decoder.DEC_R16:
@@ -279,12 +316,67 @@ func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
 
 	switch lastInstr.InstructionType {
 	case decoder.JP_NN:
-		if err := cg.jp_nn(lastInstr, irBlock); err != nil {
-			return err
-		}
+		return cg.jp_nn(lastInstr, irBlock)
+	case decoder.JP_CC_NN:
+		return cg.jp_cc_nn(lastInstr, irBlock)
+	case decoder.JR_E:
+		return cg.jr_e(lastInstr, irBlock)
+	case decoder.JR_CC_E:
+		return cg.jr_cc_e(lastInstr, irBlock)
+	case decoder.CALL_NN:
+		return cg.call_nn(lastInstr, irBlock)
+	case decoder.CALL_CC_NN:
+		return cg.call_cc_nn(lastInstr, irBlock)
+	case decoder.RET, decoder.RETI:
+		return cg.ret(lastInstr, irBlock)
+	case decoder.RET_CC:
+		return cg.ret_cc(lastInstr, irBlock)
+	case decoder.JP_HL:
+		return cg.jp_hl(lastInstr, irBlock)
+	case decoder.RST_N:
+		return cg.rst_n(lastInstr, irBlock)
 	default:
+		// a block that does not end in a terminator falls through to its
+		// single successor (e.g. a block cut short at a jump target).
+		if len(block.Successors) == 1 {
+			fallthroughBlock, ok := cg.irBlocks[block.Successors[0]]
+			if !ok {
+				return fmt.Errorf("cannot find fallthrough block for 0x%04X block", block.Start)
+			}
+			irBlock.NewStore(constant.NewInt(types.I16, int64(block.Successors[0])), cg.pc)
+			irBlock.NewBr(fallthroughBlock)
+			return nil
+		}
 		irBlock.NewRet(constant.NewInt(types.I32, 0))
 	}
 
+	return nil
+}
+
+func (cg *Codegen) setupReturnDispatcher(blocks []*analyzer.Block) error {
+	dispatch := cg.main.NewBlock("ret_dispatch")
+	cg.retDispatchBlock = dispatch
+	cur := dispatch
+
+	for i, block := range blocks {
+		target, ok := cg.irBlocks[block.Start]
+		if !ok {
+			return fmt.Errorf("can't find equivalent ir block for 0x%04X block", block.Start)
+		}
+
+		var next *ir.Block
+		if i == len(blocks)-1 {
+			next = cg.main.NewBlock("ret_dispatch_end")
+		} else {
+			next = cg.main.NewBlock(fmt.Sprintf("ret_dispatch_next_%04X", block.Start))
+		}
+
+		pcVal := cur.NewLoad(types.I16, cg.pc)
+		cmp := cur.NewICmp(enum.IPredEQ, pcVal, constant.NewInt(types.I16, int64(block.Start)))
+		cur.NewCondBr(cmp, target, next)
+		cur = next
+	}
+
+	cur.NewRet(constant.NewInt(types.I32, 0))
 	return nil
 }

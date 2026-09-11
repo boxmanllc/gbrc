@@ -96,3 +96,7 @@ func (r *Rom) Read(addr uint16) uint8 {
 
 	return r.data[addr]
 }
+
+func (r *Rom) Bytes() []byte {
+	return r.data
+}
