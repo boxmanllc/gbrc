@@ -3,6 +3,6 @@
 #include <stdint.h>
 
 uint8_t read_ram(uint16_t addr);
-void write_ram(uint16_t addr, uint16_t val);
+void write_ram(uint16_t addr, uint8_t val);
 
 #endif

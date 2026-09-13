@@ -11,4 +11,14 @@ uint8_t read_ram(uint16_t addr) {
 		return ram[addr];
 	}
 }
-void write_ram(uint16_t addr, uint16_t val) { ram[addr] = val; }
+void write_ram(uint16_t addr, uint8_t val) {
+	switch (addr) {
+	case 0xFF00:
+		joypad_write_reg(val);
+		ram[addr] = val;
+		return;
+	default:
+		ram[addr] = val;
+		return;
+	}
+}
