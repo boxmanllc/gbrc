@@ -2,10 +2,12 @@
 #include "interrupt.h"
 #include "joypad.h"
 #include "ram.h"
+#include "timer.h"
 #include <stdio.h>
 
 void gb_init() {
 	interrupt_init();
+	timer_init();
 	joypad_init();
 }
 
