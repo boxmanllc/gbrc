@@ -38,9 +38,14 @@ run = false
 cmd = "clang -Iinclude tests/timer_check.c src/timer.c src/interrupt.c -o $BUILD_PATH/timer_check && $BUILD_PATH/timer_check"
 run = false
 
+[custom.ppu-test]
+cmd = "clang -Iinclude tests/ppu_check.c src/ppu.c src/interrupt.c -o $BUILD_PATH/ppu_check && $BUILD_PATH/ppu_check"
+run = false
+
 [custom.test]
 cmd = """
 bake interrupt-test &&
 bake joypad-test &&
-bake timer-test
+bake timer-test &&
+bake ppu-test
 """

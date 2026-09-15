@@ -1,0 +1,297 @@
+#include "ppu.h"
+#include "gb.h"
+#include "interrupt.h"
+#include <stdint.h>
+#include <string.h>
+
+#define DOTS_PER_LINE 456
+#define LINES_PER_FRAME 154
+#define VBLANK_LINE 144
+#define MODE2_DOTS 80  // oam scan
+#define MODE3_DOTS 172 // drawing (fixed length; real hw varies)
+
+static Ppu ppu;
+void (*ppu_present)(const uint8_t *) = 0;
+
+// forward declarations of internal helpers
+static uint8_t shade(uint8_t palette, uint8_t color);
+static void oam_dma(uint8_t val);
+static void update_mode_and_stat(Ppu *ppu);
+static void render_scanline(Ppu *ppu, uint8_t ly);
+static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
+                           const uint8_t *bg_color);
+
+void ppu_init_impl(Ppu *ppu) {
+	memset(ppu, 0, sizeof(*ppu));
+	ppu->lcdc = 0x91; // lcd on, bg on, tile data $8000, bg map $9800
+	ppu->bgp = 0xFC;  // boot palette
+	ppu->last_cycles = 0;
+}
+
+void ppu_tick_impl(Ppu *ppu) {
+	uint32_t now = cycles;
+	uint32_t dt = (now - ppu->last_cycles) * 4; // 4 dots per machine cycle
+	ppu->last_cycles = now;
+
+	// lcd off: the ppu is reset and held at line 0 / mode 0
+	if (!(ppu->lcdc & 0x80)) {
+		ppu->ly = 0;
+		ppu->dot = 0;
+		ppu->mode = 0;
+		ppu->stat_line = false;
+		return;
+	}
+
+	ppu->dot += dt;
+	while (ppu->dot >= DOTS_PER_LINE) {
+		ppu->dot -= DOTS_PER_LINE;
+
+		// the scanline `ly` just completed; draw it if it was visible
+		if (ppu->ly < GB_LCD_HEIGHT)
+			render_scanline(ppu, ppu->ly);
+
+		ppu->ly++;
+		if (ppu->ly == VBLANK_LINE) {
+			interrupt_request(INT_VBLANK);
+			if (ppu_present)
+				ppu_present(ppu->framebuffer);
+		}
+		if (ppu->ly >= LINES_PER_FRAME)
+			ppu->ly = 0;
+	}
+
+	update_mode_and_stat(ppu);
+}
+
+static void update_mode_and_stat(Ppu *ppu) {
+	uint8_t mode;
+	if (ppu->ly >= GB_LCD_HEIGHT)
+		mode = 1; // vblank
+	else if (ppu->dot < MODE2_DOTS)
+		mode = 2; // oam scan
+	else if (ppu->dot < MODE2_DOTS + MODE3_DOTS)
+		mode = 3; // drawing
+	else
+		mode = 0; // hblank
+	ppu->mode = mode;
+
+	bool coincidence = (ppu->ly == ppu->lyc);
+
+	// the stat interrupt line is the OR of the enabled sources
+	bool line = false;
+	if ((ppu->stat & 0x08) && mode == 0)
+		line = true; // hblank select
+	if ((ppu->stat & 0x10) && mode == 1)
+		line = true; // vblank select
+	if ((ppu->stat & 0x20) && mode == 2)
+		line = true; // oam select
+	if ((ppu->stat & 0x40) && coincidence)
+		line = true; // lyc select
+
+	// stat interrupt fires on a rising edge of that line
+	if (line && !ppu->stat_line)
+		interrupt_request(INT_STAT);
+	ppu->stat_line = line;
+}
+
+uint8_t ppu_read_impl(Ppu *ppu, uint16_t addr) {
+	ppu_tick_impl(ppu);
+	switch (addr) {
+	case 0xFF40:
+		return ppu->lcdc;
+	case 0xFF41:
+		// bit7 reads 1, bits 3-6 selects, bit2 coincidence, bits 0-1 mode
+		return 0x80 | (ppu->stat & 0x78) |
+		       ((ppu->ly == ppu->lyc) ? 0x04 : 0x00) | (ppu->mode & 3);
+	case 0xFF42:
+		return ppu->scy;
+	case 0xFF43:
+		return ppu->scx;
+	case 0xFF44:
+		return ppu->ly;
+	case 0xFF45:
+		return ppu->lyc;
+	case 0xFF47:
+		return ppu->bgp;
+	case 0xFF48:
+		return ppu->obp0;
+	case 0xFF49:
+		return ppu->obp1;
+	case 0xFF4A:
+		return ppu->wy;
+	case 0xFF4B:
+		return ppu->wx;
+	}
+	return 0xFF;
+}
+
+void ppu_write_impl(Ppu *ppu, uint16_t addr, uint8_t val) {
+	ppu_tick_impl(ppu);
+	switch (addr) {
+	case 0xFF40:
+		ppu->lcdc = val;
+		break;
+	case 0xFF41:
+		ppu->stat = val & 0x78; // only the select bits are writable
+		break;
+	case 0xFF42:
+		ppu->scy = val;
+		break;
+	case 0xFF43:
+		ppu->scx = val;
+		break;
+	case 0xFF44:
+		break; // ly is read-only
+	case 0xFF45:
+		ppu->lyc = val;
+		break;
+	case 0xFF46:
+		oam_dma(val);
+		break;
+	case 0xFF47:
+		ppu->bgp = val;
+		break;
+	case 0xFF48:
+		ppu->obp0 = val;
+		break;
+	case 0xFF49:
+		ppu->obp1 = val;
+		break;
+	case 0xFF4A:
+		ppu->wy = val;
+		break;
+	case 0xFF4B:
+		ppu->wx = val;
+		break;
+	}
+}
+
+// $FF46: copy 160 bytes from $XX00 (val = XX) into OAM at $FE00.
+// ponytail: instantaneous copy; real hw takes ~160 machine cycles.
+static void oam_dma(uint8_t val) {
+	uint16_t src = (uint16_t)val << 8;
+	for (uint16_t i = 0; i < 0xA0; i++)
+		ram[0xFE00 + i] = ram[src + i];
+}
+
+// map a 2-bit color index through a palette register to a 2-bit shade
+static uint8_t shade(uint8_t palette, uint8_t color) {
+	return (palette >> (color * 2)) & 3;
+}
+
+static void render_scanline(Ppu *ppu, uint8_t ly) {
+	uint8_t *line = &ppu->framebuffer[ly * GB_LCD_WIDTH];
+	uint8_t bg_color[GB_LCD_WIDTH]; // raw bg color index, for sprite priority
+
+	bool unsigned_tiles = ppu->lcdc & 0x10;
+	uint16_t bg_map = (ppu->lcdc & 0x08) ? 0x9C00 : 0x9800;
+	uint16_t win_map = (ppu->lcdc & 0x40) ? 0x9C00 : 0x9800;
+	bool win_on_line = (ppu->lcdc & 0x20) && (ly >= ppu->wy);
+
+	for (int x = 0; x < GB_LCD_WIDTH; x++) {
+		uint8_t color = 0;
+
+		if (ppu->lcdc & 0x01) { // bg & window enable (DMG)
+			bool in_window = win_on_line && (x >= (int)ppu->wx - 7);
+			uint16_t map;
+			uint8_t px, py; // coordinate inside the 256x256 map space
+			if (in_window) {
+				map = win_map;
+				px = (uint8_t)(x - ((int)ppu->wx - 7));
+				py = (uint8_t)(ly - ppu->wy);
+			} else {
+				map = bg_map;
+				px = (uint8_t)(x + ppu->scx);
+				py = (uint8_t)(ly + ppu->scy);
+			}
+
+			uint8_t tile_id = ram[map + (py / 8) * 32 + (px / 8)];
+			uint16_t tile_addr;
+			if (unsigned_tiles)
+				tile_addr = 0x8000 + tile_id * 16;
+			else
+				tile_addr = 0x9000 + (int8_t)tile_id * 16;
+
+			uint8_t row = py % 8;
+			uint8_t lo = ram[tile_addr + row * 2];
+			uint8_t hi = ram[tile_addr + row * 2 + 1];
+			uint8_t bit = 7 - (px % 8);
+			color = (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
+		}
+
+		bg_color[x] = color;
+		line[x] = shade(ppu->bgp, color);
+	}
+
+	if (ppu->lcdc & 0x02) // obj enable
+		render_sprites(ppu, ly, line, bg_color);
+}
+
+static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
+                           const uint8_t *bg_color) {
+	uint8_t height = (ppu->lcdc & 0x04) ? 16 : 8;
+
+	// gather up to 10 sprites intersecting this line (hardware limit)
+	int chosen[10];
+	int count = 0;
+	for (int i = 0; i < 40 && count < 10; i++) {
+		int sy = ram[0xFE00 + i * 4] - 16;
+		if ((int)ly >= sy && (int)ly < sy + height)
+			chosen[count++] = i;
+	}
+
+	// order lowest priority first so higher priority draws on top.
+	// DMG priority: smaller x wins; on a tie, smaller OAM index wins.
+	for (int a = 0; a < count; a++) {
+		for (int b = a + 1; b < count; b++) {
+			int ax = ram[0xFE00 + chosen[a] * 4 + 1];
+			int bx = ram[0xFE00 + chosen[b] * 4 + 1];
+			bool a_lower = (ax > bx) || (ax == bx && chosen[a] > chosen[b]);
+			if (!a_lower) {
+				int t = chosen[a];
+				chosen[a] = chosen[b];
+				chosen[b] = t;
+			}
+		}
+	}
+
+	for (int c = 0; c < count; c++) {
+		int i = chosen[c];
+		int sy = ram[0xFE00 + i * 4] - 16;
+		int sx = ram[0xFE00 + i * 4 + 1] - 8;
+		uint8_t tile = ram[0xFE00 + i * 4 + 2];
+		uint8_t attr = ram[0xFE00 + i * 4 + 3];
+		bool flip_y = attr & 0x40;
+		bool flip_x = attr & 0x20;
+		uint8_t pal = (attr & 0x10) ? ppu->obp1 : ppu->obp0;
+		bool behind_bg = attr & 0x80;
+
+		uint8_t row = (uint8_t)((int)ly - sy);
+		if (flip_y)
+			row = height - 1 - row;
+		if (height == 16)
+			tile &= 0xFE; // 8x16 sprites use an even base tile
+		uint16_t tile_addr = 0x8000 + tile * 16 + row * 2;
+		uint8_t lo = ram[tile_addr];
+		uint8_t hi = ram[tile_addr + 1];
+
+		for (int p = 0; p < 8; p++) {
+			int x = sx + p;
+			if (x < 0 || x >= GB_LCD_WIDTH)
+				continue;
+			uint8_t bit = flip_x ? p : 7 - p;
+			uint8_t color =
+			    (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
+			if (color == 0)
+				continue; // color 0 is transparent for sprites
+			if (behind_bg && bg_color[x] != 0)
+				continue; // hidden behind bg colors 1-3
+			line[x] = shade(pal, color);
+		}
+	}
+}
+
+void ppu_init(void) { ppu_init_impl(&ppu); }
+void ppu_tick(void) { ppu_tick_impl(&ppu); }
+uint8_t ppu_read(uint16_t addr) { return ppu_read_impl(&ppu, addr); }
+void ppu_write(uint16_t addr, uint8_t val) { ppu_write_impl(&ppu, addr, val); }
