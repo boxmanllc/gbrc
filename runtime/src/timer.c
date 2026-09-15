@@ -3,6 +3,11 @@
 #include "interrupt.h"
 #include <stdint.h>
 
+#define DIV 0xFF04
+#define TIMA 0xFF05
+#define TMA 0xFF06
+#define TAC 0xFF07
+
 static Timer tmr;
 
 static const uint32_t tima_period[4] = {1024, 16, 64, 256};
@@ -52,13 +57,13 @@ void timer_tick_impl(Timer *tmr) {
 uint8_t timer_read_impl(Timer *tmr, uint16_t addr) {
 	timer_tick_impl(tmr);
 	switch (addr) {
-	case 0xFF04:
+	case DIV:
 		return (uint8_t)(tmr->div_counter >> 8);
-	case 0xFF05:
+	case TIMA:
 		return tmr->tima;
-	case 0xFF06:
+	case TMA:
 		return tmr->tma;
-	case 0xFF07:
+	case TAC:
 		// unused top 5 bits read as 1
 		// 0xF8 = 0b1111_1000
 		return tmr->tac | 0xF8;
@@ -69,16 +74,16 @@ uint8_t timer_read_impl(Timer *tmr, uint16_t addr) {
 void timer_write_impl(Timer *tmr, uint16_t addr, uint8_t val) {
 	timer_tick_impl(tmr);
 	switch (addr) {
-	case 0xFF04:
+	case DIV:
 		tmr->div_counter = 0;
 		break;
-	case 0xFF05:
+	case TIMA:
 		tmr->tima = val;
 		break;
-	case 0xFF06:
+	case TMA:
 		tmr->tma = val;
 		break;
-	case 0xFF07:
+	case TAC:
 		tmr->tac = val & 7;
 		break;
 	}
