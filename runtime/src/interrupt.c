@@ -18,7 +18,11 @@ uint8_t ie_read() { return ie_reg; }
 void if_write(uint8_t v) { if_reg = (v | 0xE0); }
 void ie_write(uint8_t v) { ie_reg = v; }
 
-void interrupt_request(Interrupt i) { if_reg |= (uint8_t)(1u << i); }
+void interrupt_request(Interrupt i) {
+	if (i >= INT_UNKNOWN)
+		return;
+	if_reg |= (uint8_t)(1u << i);
+}
 
 void interrupt_dispatch() {
 	if (!IME)

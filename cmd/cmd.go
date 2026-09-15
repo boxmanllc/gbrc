@@ -3,6 +3,7 @@ package cmd
 import (
 	"flag"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -31,7 +32,7 @@ func Run() {
 	an := analyzer.New(dec)
 	blocks := an.AnalyzeBlocks()
 
-	cg, err := codegen.New(blocks, debugFlag)
+	cg, err := codegen.New(blocks, romFile.Bytes(), debugFlag)
 	if err != nil {
 		log.Fatalf("failed to generate ir: %s", err)
 	}
@@ -47,9 +48,43 @@ func Run() {
 	}
 
 	if toCompile {
-		if _, err := exec.Command("clang", "-O0", "-g", irFilePath, "-o", outFilePath).Output(); err != nil {
+		projectRoot, err := findProjectRoot()
+		if err != nil {
+			log.Fatalf("failed to locate project root: %s", err)
+		}
+
+		runtimeInclude := filepath.Join(projectRoot, "runtime", "include")
+		mainC := filepath.Join(projectRoot, "runtime", "src", "main.c")
+		ramC := filepath.Join(projectRoot, "runtime", "src", "ram.c")
+		joypadC := filepath.Join(projectRoot, "runtime", "src", "joypad.c")
+		interruptC := filepath.Join(projectRoot, "runtime", "src", "interrupt.c")
+
+		if _, err := exec.Command("clang", "-O0", "-g",
+			"-I"+runtimeInclude,
+			irFilePath,
+			mainC, ramC, joypadC, interruptC,
+			"-o", outFilePath).Output(); err != nil {
 			log.Fatalf("failed to compile ir: %s", err)
 		}
+	}
+}
+
+func findProjectRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", os.ErrNotExist
+		}
+		dir = parent
 	}
 }
 

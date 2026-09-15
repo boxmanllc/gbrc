@@ -32,12 +32,14 @@ type bitwiseConfig struct {
 }
 
 const (
-	destReg destType = iota // store result in a register
-	destHL                  // store result in location pointed by (HL)
+	destUnknown destType = iota
+	destReg
+	destHL
 )
 
 const (
-	bit8OpAdd bit8ArithmeticOp = iota
+	bit8OpUnknown bit8ArithmeticOp = iota
+	bit8OpAdd
 	bit8OpSub
 	bit8OpCompare
 	bit8OpIncrease
@@ -48,7 +50,8 @@ const (
 )
 
 const (
-	bitwiseOpRotateLeftCircular bitwiseOp = iota
+	bitwiseOpUnknown bitwiseOp = iota
+	bitwiseOpRotateLeftCircular
 	bitwiseOpRotateRightCircular
 	bitwiseOpRotateLeft
 	bitwiseOpRotateRight
@@ -59,7 +62,8 @@ const (
 )
 
 const (
-	bitOpTest bitOp = iota
+	bitOpUnknown bitOp = iota
+	bitOpTest
 	bitOpReset
 	bitOpSet
 )
@@ -93,7 +97,7 @@ func (cg *Codegen) perform8BitArithmetic(
 
 	switch opType {
 	case bit8OpAdd:
-		result16 := irBlock.NewAdd(ir.NewAdd(a16, operand16), c16)
+		result16 := irBlock.NewAdd(irBlock.NewAdd(a16, operand16), c16)
 
 		aLow := irBlock.NewAnd(a16, constant.NewInt(types.I16, 0x0F))
 		operandLow := irBlock.NewAnd(operand16, constant.NewInt(types.I16, 0x0F))

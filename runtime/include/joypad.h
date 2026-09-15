@@ -9,6 +9,7 @@
 
 // clang-format off
 typedef enum {
+  BUTTON_UNKNOWN = -1,
   DOWN = 7, UP = 6, LEFT = 5, RIGHT = 4,
   START = 3, SELECT = 2, B = 1, A = 0,
 } Button;

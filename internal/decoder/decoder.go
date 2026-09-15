@@ -143,6 +143,7 @@ const (
 	Z
 	NC
 	C
+	JumpConditionUnknown
 )
 
 type Instruction struct {
@@ -875,6 +876,6 @@ func (c JumpCondition) String() string {
 	case C:
 		return "C"
 	default:
-		panic(fmt.Sprintf("unknown jump condition: %d", c))
+		return "??"
 	}
 }
