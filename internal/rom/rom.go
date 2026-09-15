@@ -8,22 +8,31 @@ import (
 type CartridgeType int
 
 var (
-	RomOnly        CartridgeType = 0x00
-	MBC1           CartridgeType = 0x01
-	MBC1RAM        CartridgeType = 0x02
-	MBC1RAMBattery CartridgeType = 0x03
-	MBC2           CartridgeType = 0x05
-	MBC2Battery    CartridgeType = 0x06
+	CartridgeTypeUnknown CartridgeType = 0xFF
+	RomOnly              CartridgeType = 0x00
+	MBC1                 CartridgeType = 0x01
+	MBC1RAM              CartridgeType = 0x02
+	MBC1RAMBattery       CartridgeType = 0x03
+	MBC2                 CartridgeType = 0x05
+	MBC2Battery          CartridgeType = 0x06
 
 	CartridgeTypeNameMapping = map[CartridgeType]string{
-		RomOnly:        "ROM ONLY",
-		MBC1:           "MBC1",
-		MBC1RAM:        "MBC1+RAM",
-		MBC1RAMBattery: "MBC1+RAM+BATTERY",
-		MBC2:           "MBC2",
-		MBC2Battery:    "MBC2+BATTERY",
+		CartridgeTypeUnknown: "UNKNOWN",
+		RomOnly:              "ROM ONLY",
+		MBC1:                 "MBC1",
+		MBC1RAM:              "MBC1+RAM",
+		MBC1RAMBattery:       "MBC1+RAM+BATTERY",
+		MBC2:                 "MBC2",
+		MBC2Battery:          "MBC2+BATTERY",
 	}
 )
+
+func (c CartridgeType) String() string {
+	if name, ok := CartridgeTypeNameMapping[c]; ok {
+		return name
+	}
+	return "UNKNOWN"
+}
 
 type Rom struct {
 	Title         string
@@ -44,7 +53,7 @@ func (r *Rom) String() string {
   RAM Size: %.2f KiB
   CGB Support: %t
   ROM Version: %d`,
-		r.Title, CartridgeTypeNameMapping[r.CartridgeType],
+		r.Title, r.CartridgeType.String(),
 		(float64(r.RomSize) / 1024), (float64(r.RamSize) / 1024),
 		r.Cgb, r.RomVersion,
 	)

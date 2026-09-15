@@ -56,6 +56,8 @@ uint8_t read_joypad(Jp *pad) {
 }
 
 void set_button(Jp *pad, Button button, bool pressed) {
+	if (button == BUTTON_UNKNOWN)
+		return;
 	pad->buttons[button] = pressed;
 }
 

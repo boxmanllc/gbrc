@@ -35,8 +35,6 @@ type Codegen struct {
 
 	debug     bool
 	debugFunc *ir.Func
-
-	romBytes []byte // raw rom image copied into @ram
 }
 
 type function struct {
@@ -48,14 +46,13 @@ func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error
 	cg := &Codegen{
 		instrFuncs: make(map[string]*ir.Func),
 		irBlocks:   make(map[uint16]*ir.Block),
-		romBytes:   romBytes,
 	}
 
 	cg.module = ir.NewModule()
 	cg.main = cg.module.NewFunc("rom_main", types.I32)
 	cg.debug = debug
 
-	cg.emitGlobals()
+	cg.emitGlobals(romBytes)
 	if cg.debug {
 		cg.setupDebugFunc()
 	}
@@ -67,9 +64,7 @@ func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error
 	// all blocks are emitted, including the interrupt vector and rst handler
 	// blocks below the rom entry point, so the compiled program starts
 	// executing from address 0x0000 like real hardware.
-	blocksToProcess := blocks
-
-	for _, block := range blocksToProcess {
+	for _, block := range blocks {
 		if err := cg.emitBlock(block); err != nil {
 			return nil, err
 		}
@@ -77,20 +72,20 @@ func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error
 
 	// the return dispatcher is always set up since ret/reti/jp (hl) and
 	// out-of-image call/jp targets resolve their destination at runtime.
-	if err := cg.setupReturnDispatcher(blocksToProcess); err != nil {
+	if err := cg.setupReturnDispatcher(blocks); err != nil {
 		return nil, err
 	}
 
-	for _, block := range blocksToProcess {
+	for _, block := range blocks {
 		if err := cg.joinBlocks(block); err != nil {
 			return nil, err
 		}
 	}
 
-	if len(blocksToProcess) > 0 {
-		first, ok := cg.irBlocks[blocksToProcess[0].Start]
+	if len(blocks) > 0 {
+		first, ok := cg.irBlocks[blocks[0].Start]
 		if !ok {
-			return nil, fmt.Errorf("can't find first block 0x%04X", blocksToProcess[0].Start)
+			return nil, fmt.Errorf("can't find first block 0x%04X", blocks[0].Start)
 		}
 		bootEntry.NewBr(first)
 	} else {
@@ -104,9 +99,9 @@ func (cg *Codegen) WriteTo(filepath string) error {
 	return os.WriteFile(filepath, []byte(cg.module.String()), 0644)
 }
 
-func (cg *Codegen) emitGlobals() {
+func (cg *Codegen) emitGlobals(romBytes []byte) {
 	image := make([]byte, 0x10000)
-	copy(image, cg.romBytes)
+	copy(image, romBytes)
 	cg.ram = cg.module.NewGlobalDef("ram", constant.NewCharArray(image))
 	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 
@@ -287,7 +282,7 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*function, error
 	switch instr.InstructionType {
 	case decoder.LD_R8_N, decoder.LD_HL_N,
 		decoder.LDH_A_N, decoder.LDH_N_A, decoder.LD_HL_SP_E,
-		decoder.ADD_N, decoder.ADC_N,
+		decoder.ADD_SP_E, decoder.ADD_N, decoder.ADC_N,
 		decoder.SUB_N, decoder.SBC_N, decoder.CP_N,
 		decoder.AND_N, decoder.OR_N, decoder.XOR_N:
 		args = []value.Value{constant.NewInt(types.I8, int64(instr.Imm8Bit))}

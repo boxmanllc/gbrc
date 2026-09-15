@@ -388,10 +388,7 @@ func (cg *Codegen) bit8_arithmetic_r8(instr *decoder.Instruction) (*ir.Func, err
 			dest = srcReg
 		}
 
-		toIncludeCarryFlag := false
-		if instr.InstructionType == decoder.ADC_R8 || instr.InstructionType == decoder.SBC_R8 {
-			toIncludeCarryFlag = true
-		}
+		toIncludeCarryFlag := instr.InstructionType == decoder.ADC_R8 || instr.InstructionType == decoder.SBC_R8
 
 		if err := cg.perform8BitArithmetic(b, opType, operand, bit8ArithmeticConfig{
 			toIncludeCarryFlag: toIncludeCarryFlag,
@@ -428,10 +425,7 @@ func (cg *Codegen) bit8_arithmetic_hl(instr *decoder.Instruction) (*ir.Func, err
 			destType = destHL
 		}
 
-		toIncludeCarryFlag := false
-		if instr.InstructionType == decoder.ADC_HL || instr.InstructionType == decoder.SBC_HL {
-			toIncludeCarryFlag = true
-		}
+		toIncludeCarryFlag := instr.InstructionType == decoder.ADC_HL || instr.InstructionType == decoder.SBC_HL
 
 		if err := cg.perform8BitArithmetic(b, opType, operand, bit8ArithmeticConfig{
 			toIncludeCarryFlag: toIncludeCarryFlag,
@@ -454,10 +448,7 @@ func (cg *Codegen) bit8_arithmetic_n(instr *decoder.Instruction) (*ir.Func, erro
 			return err
 		}
 
-		toIncludeCarryFlag := false
-		if instr.InstructionType == decoder.ADC_N || instr.InstructionType == decoder.SBC_N {
-			toIncludeCarryFlag = true
-		}
+		toIncludeCarryFlag := instr.InstructionType == decoder.ADC_N || instr.InstructionType == decoder.SBC_N
 
 		if err := cg.perform8BitArithmetic(b, opType, p, bit8ArithmeticConfig{
 			toIncludeCarryFlag: toIncludeCarryFlag,
@@ -862,8 +853,6 @@ func (cg *Codegen) ret_cc(instr *decoder.Instruction, irBlock *ir.Block) error {
 	return nil
 }
 
-// jp_hl jumps to the address currently held in HL. Since the target is
-// computed at runtime, it is resolved via the return dispatch chain.
 func (cg *Codegen) jp_hl(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 
@@ -882,8 +871,6 @@ func (cg *Codegen) jp_hl(instr *decoder.Instruction, irBlock *ir.Block) error {
 	return nil
 }
 
-// rst_n pushes the return address and jumps to the fixed rst vector, like a
-// call to a known address.
 func (cg *Codegen) rst_n(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 

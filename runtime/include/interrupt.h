@@ -8,6 +8,7 @@ typedef enum {
 	INT_TIMER = 2,
 	INT_SERIAL = 3,
 	INT_JOYPAD = 4,
+	INT_UNKNOWN = 5,
 } Interrupt;
 
 extern uint8_t IME;
