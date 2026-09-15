@@ -1,12 +1,16 @@
 #include "gb.h"
 #include "interrupt.h"
 #include "joypad.h"
+#include "ppu.h"
 #include "ram.h"
+#include "timer.h"
 #include <stdio.h>
 
 void gb_init() {
 	interrupt_init();
+	timer_init();
 	joypad_init();
+	ppu_init();
 }
 
 int main() {

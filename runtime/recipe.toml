@@ -29,3 +29,23 @@ run = true
 [custom.interrupt-test]
 cmd = "clang -Iinclude tests/interrupt_check.c src/interrupt.c -o $BUILD_PATH/interrupt_check && $BUILD_PATH/interrupt_check"
 run = false
+
+[custom.joypad-test]
+cmd = "clang -Iinclude tests/joypad_check.c src/joypad.c -o $BUILD_PATH/joypad_check && $BUILD_PATH/joypad_check"
+run = false
+
+[custom.timer-test]
+cmd = "clang -Iinclude tests/timer_check.c src/timer.c src/interrupt.c -o $BUILD_PATH/timer_check && $BUILD_PATH/timer_check"
+run = false
+
+[custom.ppu-test]
+cmd = "clang -Iinclude tests/ppu_check.c src/ppu.c src/interrupt.c -o $BUILD_PATH/ppu_check && $BUILD_PATH/ppu_check"
+run = false
+
+[custom.test]
+cmd = """
+bake interrupt-test &&
+bake joypad-test &&
+bake timer-test &&
+bake ppu-test
+"""
