@@ -32,10 +32,7 @@ func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
 }
 
 func (cg *Codegen) readMemory(irBlock *ir.Block, addr value.Value) value.Value {
-	isIO := irBlock.NewICmp(enum.IPredUGE, addr, constant.NewInt(types.I16, 0xFF00))
-	inlineVal := irBlock.NewLoad(types.I8, cg.getRamPtr(irBlock, addr))
-	ioVal := irBlock.NewCall(cg.readRam, addr)
-	return irBlock.NewSelect(isIO, ioVal, inlineVal)
+	return irBlock.NewCall(cg.readMem, addr)
 }
 
 func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
@@ -256,6 +253,16 @@ func (cg *Codegen) buildOpcodeFunc(
 func (cg *Codegen) increaseCycles(instr *decoder.Instruction, irBlock *ir.Block) {
 	cycles := irBlock.NewLoad(types.I32, cg.cycles)
 	cyclesInc := irBlock.NewAdd(cycles, constant.NewInt(types.I32, int64(instr.BaseMCycles)))
+	irBlock.NewStore(cyclesInc, cg.cycles)
+}
+
+func (cg *Codegen) increaseAdditionalCycles(instr *decoder.Instruction, irBlock *ir.Block) {
+	if instr.AdditionalMCycles == 0 {
+		return
+	}
+
+	cycles := irBlock.NewLoad(types.I32, cg.cycles)
+	cyclesInc := irBlock.NewAdd(cycles, constant.NewInt(types.I32, int64(instr.AdditionalMCycles)))
 	irBlock.NewStore(cyclesInc, cg.cycles)
 }
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"flag"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -47,14 +48,43 @@ func Run() {
 	}
 
 	if toCompile {
+		projectRoot, err := findProjectRoot()
+		if err != nil {
+			log.Fatalf("failed to locate project root: %s", err)
+		}
+
+		runtimeInclude := filepath.Join(projectRoot, "runtime", "include")
+		mainC := filepath.Join(projectRoot, "runtime", "src", "main.c")
+		ramC := filepath.Join(projectRoot, "runtime", "src", "ram.c")
+		joypadC := filepath.Join(projectRoot, "runtime", "src", "joypad.c")
+		interruptC := filepath.Join(projectRoot, "runtime", "src", "interrupt.c")
+
 		if _, err := exec.Command("clang", "-O0", "-g",
-			"-Iruntime/include",
+			"-I"+runtimeInclude,
 			irFilePath,
-			"runtime/src/main.c", "runtime/src/ram.c",
-			"runtime/src/joypad.c", "runtime/src/interrupt.c",
+			mainC, ramC, joypadC, interruptC,
 			"-o", outFilePath).Output(); err != nil {
 			log.Fatalf("failed to compile ir: %s", err)
 		}
+	}
+}
+
+func findProjectRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", os.ErrNotExist
+		}
+		dir = parent
 	}
 }
 

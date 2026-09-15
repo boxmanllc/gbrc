@@ -29,9 +29,11 @@ type Codegen struct {
 	aReg, bReg, cReg, dReg, eReg, hReg, lReg *ir.Global // registers
 	zFlag, nFlag, hFlag, cFlag               *ir.Global // individual bit flags
 	pc, sp                                   *ir.Global // stack pointer
+	ime                                      *ir.Global // interrupt master enable flag from runtime
 
 	readRam  *ir.Func // helper for read_ram() called in runtime
 	writeRam *ir.Func // helper for write_ram() called in runtime
+	readMem  *ir.Func // helper that conditionally routes memory reads to read_ram
 
 	debug     bool
 	debugFunc *ir.Func
@@ -120,9 +122,36 @@ func (cg *Codegen) emitGlobals(romBytes []byte) {
 
 	cg.pc = cg.module.NewGlobalDef("pc", constant.NewInt(types.I16, 0))
 	cg.sp = cg.module.NewGlobalDef("sp", constant.NewInt(types.I16, 0))
+	cg.ime = cg.module.NewGlobal("IME", types.I8)
 
 	cg.readRam = cg.module.NewFunc("read_ram", types.I8, ir.NewParam("addr", types.I16))
 	cg.writeRam = cg.module.NewFunc("write_ram", types.Void, ir.NewParam("addr", types.I16), ir.NewParam("val", types.I8))
+	cg.setupReadMemFunc()
+}
+
+func (cg *Codegen) setupReadMemFunc() {
+	cg.readMem = cg.module.NewFunc("cg_read_memory", types.I8, ir.NewParam("addr", types.I16))
+
+	entry := cg.readMem.NewBlock("entry")
+	inlineBlock := cg.readMem.NewBlock("inline")
+	ioBlock := cg.readMem.NewBlock("io")
+	exitBlock := cg.readMem.NewBlock("exit")
+
+	addr := cg.readMem.Params[0]
+	isIO := entry.NewICmp(enum.IPredUGE, addr, constant.NewInt(types.I16, 0xFF00))
+	entry.NewCondBr(isIO, ioBlock, inlineBlock)
+
+	inlineVal := inlineBlock.NewLoad(types.I8, cg.getRamPtr(inlineBlock, addr))
+	inlineBlock.NewBr(exitBlock)
+
+	ioVal := ioBlock.NewCall(cg.readRam, addr)
+	ioBlock.NewBr(exitBlock)
+
+	val := exitBlock.NewPhi(
+		ir.NewIncoming(ioVal, ioBlock),
+		ir.NewIncoming(inlineVal, inlineBlock),
+	)
+	exitBlock.NewRet(val)
 }
 
 func (cg *Codegen) emitBlock(block *analyzer.Block) error {
@@ -322,8 +351,10 @@ func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
 		return cg.call_nn(lastInstr, irBlock)
 	case decoder.CALL_CC_NN:
 		return cg.call_cc_nn(lastInstr, irBlock)
-	case decoder.RET, decoder.RETI:
+	case decoder.RET:
 		return cg.ret(lastInstr, irBlock)
+	case decoder.RETI:
+		return cg.reti(lastInstr, irBlock)
 	case decoder.RET_CC:
 		return cg.ret_cc(lastInstr, irBlock)
 	case decoder.JP_HL:

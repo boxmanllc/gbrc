@@ -667,11 +667,17 @@ func (cg *Codegen) bit_op(instr *decoder.Instruction) (*ir.Func, error) {
 }
 
 func (cg *Codegen) di(instr *decoder.Instruction) (*ir.Func, error) {
-	return cg.buildVoidFunc(instr, func(b *ir.Block) error { return nil })
+	return cg.buildVoidFunc(instr, func(b *ir.Block) error {
+		b.NewStore(constant.NewInt(types.I8, 0), cg.ime)
+		return nil
+	})
 }
 
 func (cg *Codegen) ei(instr *decoder.Instruction) (*ir.Func, error) {
-	return cg.buildVoidFunc(instr, func(b *ir.Block) error { return nil })
+	return cg.buildVoidFunc(instr, func(b *ir.Block) error {
+		b.NewStore(constant.NewInt(types.I8, 1), cg.ime)
+		return nil
+	})
 }
 
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
@@ -704,13 +710,16 @@ func (cg *Codegen) jp_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) error
 	}
 
 	cond := cg.loadCondition(irBlock, instr.JumpCondition)
+	takenBlock := cg.main.NewBlock(fmt.Sprintf("jp_cc_taken_%04X", instr.Address))
 	nextPC := irBlock.NewSelect(
 		cond,
 		constant.NewInt(types.I16, int64(instr.Imm16Bit)),
 		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
 	)
 	irBlock.NewStore(nextPC, cg.pc)
-	irBlock.NewCondBr(cond, toBlock, fallthroughBlock)
+	irBlock.NewCondBr(cond, takenBlock, fallthroughBlock)
+	cg.increaseAdditionalCycles(instr, takenBlock)
+	takenBlock.NewBr(toBlock)
 	return nil
 }
 
@@ -743,13 +752,16 @@ func (cg *Codegen) jr_cc_e(instr *decoder.Instruction, irBlock *ir.Block) error 
 	}
 
 	cond := cg.loadCondition(irBlock, instr.JumpCondition)
+	takenBlock := cg.main.NewBlock(fmt.Sprintf("jr_cc_taken_%04X", instr.Address))
 	nextPC := irBlock.NewSelect(
 		cond,
 		constant.NewInt(types.I16, int64(target)),
 		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
 	)
 	irBlock.NewStore(nextPC, cg.pc)
-	irBlock.NewCondBr(cond, toBlock, fallthroughBlock)
+	irBlock.NewCondBr(cond, takenBlock, fallthroughBlock)
+	cg.increaseAdditionalCycles(instr, takenBlock)
+	takenBlock.NewBr(toBlock)
 	return nil
 }
 
@@ -801,6 +813,7 @@ func (cg *Codegen) call_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) err
 	if err := cg.pushReturnAddress(takenBlock, retAddr); err != nil {
 		return err
 	}
+	cg.increaseAdditionalCycles(instr, takenBlock)
 
 	takenBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
 	takenBlock.NewBr(toBlock)
@@ -820,6 +833,24 @@ func (cg *Codegen) ret(instr *decoder.Instruction, irBlock *ir.Block) error {
 	}
 
 	irBlock.NewStore(retAddr, cg.pc)
+	irBlock.NewBr(cg.retDispatchBlock)
+	return nil
+}
+
+func (cg *Codegen) reti(instr *decoder.Instruction, irBlock *ir.Block) error {
+	cg.increaseCycles(instr, irBlock)
+
+	if cg.retDispatchBlock == nil {
+		return fmt.Errorf("return dispatch block is not set up")
+	}
+
+	retAddr, err := cg.popReturnAddress(irBlock)
+	if err != nil {
+		return err
+	}
+
+	irBlock.NewStore(retAddr, cg.pc)
+	irBlock.NewStore(constant.NewInt(types.I8, 1), cg.ime)
 	irBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
@@ -847,6 +878,7 @@ func (cg *Codegen) ret_cc(instr *decoder.Instruction, irBlock *ir.Block) error {
 	if err != nil {
 		return err
 	}
+	cg.increaseAdditionalCycles(instr, takenBlock)
 
 	takenBlock.NewStore(retAddr, cg.pc)
 	takenBlock.NewBr(cg.retDispatchBlock)
