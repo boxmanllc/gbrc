@@ -4,11 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define IO_START 0xFF00
-#define IO_END 0xFF3F
-#define IO_SIZE (IO_END - IO_START + 1)
-
-#define JOYPAD_ADDR 0xFF00
 #define FACE_SELECT_BIT 5
 #define DPAD_SELECT_BIT 4
 
@@ -26,12 +21,10 @@ typedef struct {
 	bool buttons[8];
 	bool dpad_selected;
 	bool face_selected;
-	uint8_t ram[IO_SIZE];
 } Jp;
 
-uint8_t read_u8(Jp *pad, uint16_t addr);
 void joypad_init_impl(Jp *pad);
-void joypad_write_impl(Jp *pad, uint16_t addr, uint8_t val);
+void joypad_write_impl(Jp *pad, uint8_t val);
 uint8_t joypad_read_impl(Jp *pad);
 void joypad_press_impl(Jp *pad, Button button, bool pressed);
 

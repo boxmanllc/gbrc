@@ -12,20 +12,6 @@ void joypad_init_impl(Jp *pad) {
 	memset(pad->buttons, false, sizeof(pad->buttons));
 	pad->dpad_selected = false;
 	pad->face_selected = false;
-	memset(pad->ram, 0, sizeof(pad->ram));
-}
-
-uint8_t read_u8(Jp *pad, uint16_t addr) {
-	if (addr == JOYPAD_ADDR) {
-		return joypad_read_impl(pad);
-	} else {
-		uint16_t rel = addr - IO_START;
-		if (rel < IO_SIZE) {
-			return pad->ram[rel];
-		} else {
-			return 0xFF;
-		}
-	}
 }
 
 uint8_t joypad_read_impl(Jp *pad) {
@@ -59,25 +45,19 @@ void joypad_press_impl(Jp *pad, Button button, bool pressed) {
 	pad->buttons[button] = pressed;
 }
 
-void joypad_write_impl(Jp *pad, uint16_t addr, uint8_t val) {
-	if (addr == JOYPAD_ADDR) {
-		// get bit at FACE_SELECT_BIT in val
-		uint8_t face_bit = (val >> FACE_SELECT_BIT) & 1u;
-		// get bit at DPAD_SELECT_BIT in val
-		uint8_t dpad_bit = (val >> DPAD_SELECT_BIT) & 1u;
-		pad->face_selected = !face_bit;
-		pad->dpad_selected = !dpad_bit;
-	} else {
-		uint16_t rel = addr - IO_START;
-		if (rel < IO_SIZE)
-			pad->ram[rel] = val;
-	}
+void joypad_write_impl(Jp *pad, uint8_t val) {
+	// get bit at FACE_SELECT_BIT in val
+	uint8_t face_bit = (val >> FACE_SELECT_BIT) & 1u;
+	// get bit at DPAD_SELECT_BIT in val
+	uint8_t dpad_bit = (val >> DPAD_SELECT_BIT) & 1u;
+	pad->face_selected = !face_bit;
+	pad->dpad_selected = !dpad_bit;
 }
 
 // no arg wrappers
 void joypad_init() { joypad_init_impl(&joypad); }
 uint8_t joypad_read() { return joypad_read_impl(&joypad); }
-void joypad_write(uint8_t val) { joypad_write_impl(&joypad, JOYPAD_ADDR, val); }
+void joypad_write(uint8_t val) { joypad_write_impl(&joypad, val); }
 void joypad_press(Button b, bool pressed) {
 	joypad_press_impl(&joypad, b, pressed);
 }

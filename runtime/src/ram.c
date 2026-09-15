@@ -35,7 +35,6 @@ void write_ram(uint16_t addr, uint8_t val) {
 	switch (addr) {
 	case 0xFF00:
 		joypad_write(val);
-		ram[addr] = val;
 		return;
 	case 0xFF04:
 	case 0xFF05:
