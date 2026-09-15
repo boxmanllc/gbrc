@@ -328,10 +328,9 @@ func (cg *Codegen) ld_hl_sp_e(instr *decoder.Instruction) (*ir.Func, error) {
 		spVal := cg.readReg16(b, sp)
 
 		eSigned16 := b.NewSExt(p, types.I16)
-		eUnsigned16 := b.NewZExt(p, types.I16)
 
 		result := b.NewAdd(spVal, eSigned16)
-		hFlag, cFlag := cg.calculateOffsetFlags(b, spVal, eUnsigned16)
+		hFlag, cFlag := cg.calculateOffsetFlags(b, spVal, eSigned16)
 
 		cg.updateReg16(b, hl, result)
 		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
@@ -466,7 +465,7 @@ func (cg *Codegen) bit8_arithmetic_n(instr *decoder.Instruction) (*ir.Func, erro
 func (cg *Codegen) ccf(instr *decoder.Instruction) (*ir.Func, error) {
 	return cg.buildVoidFunc(instr, func(b *ir.Block) error {
 		cVal := b.NewLoad(types.I1, cg.cFlag)
-		flipC := b.NewXor(cVal, constant.NewInt(types.I1, -1))
+		flipC := b.NewXor(cVal, constant.NewInt(types.I1, 1))
 
 		b.NewStore(constant.NewInt(types.I1, 0), cg.nFlag)
 		b.NewStore(constant.NewInt(types.I1, 0), cg.hFlag)
@@ -608,10 +607,9 @@ func (cg *Codegen) add_sp_e(instr *decoder.Instruction) (*ir.Func, error) {
 		spVal := cg.readReg16(b, spReg)
 
 		eSigned16 := b.NewSExt(p, types.I16)
-		eUnsigned16 := b.NewZExt(p, types.I16)
 
 		result := b.NewAdd(spVal, eSigned16)
-		hFlag, cFlag := cg.calculateOffsetFlags(b, spVal, eUnsigned16)
+		hFlag, cFlag := cg.calculateOffsetFlags(b, spVal, eSigned16)
 
 		cg.updateReg16(b, spReg, result)
 		b.NewStore(constant.NewInt(types.I1, 0), cg.zFlag)
@@ -683,31 +681,13 @@ func (cg *Codegen) ei(instr *decoder.Instruction) (*ir.Func, error) {
 func (cg *Codegen) jp_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 
-	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
-	if !ok {
-		// out-of-image target: dispatch at runtime
-		irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
-		irBlock.NewBr(cg.retDispatchBlock)
-		return nil
-	}
-
 	irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
-	irBlock.NewBr(toBlock)
+	irBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
 
 func (cg *Codegen) jp_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
-
-	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
-	if !ok {
-		return fmt.Errorf("cannot find jp cc nn fallthrough block")
-	}
-
-	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
-	if !ok {
-		toBlock = cg.retDispatchBlock
-	}
 
 	cond := cg.loadCondition(irBlock, instr.JumpCondition)
 	takenBlock := cg.main.NewBlock(fmt.Sprintf("jp_cc_taken_%04X", instr.Address))
@@ -717,9 +697,9 @@ func (cg *Codegen) jp_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) error
 		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
 	)
 	irBlock.NewStore(nextPC, cg.pc)
-	irBlock.NewCondBr(cond, takenBlock, fallthroughBlock)
+	irBlock.NewCondBr(cond, takenBlock, cg.retDispatchBlock)
 	cg.increaseAdditionalCycles(instr, takenBlock)
-	takenBlock.NewBr(toBlock)
+	takenBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
 
@@ -727,13 +707,8 @@ func (cg *Codegen) jr_e(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 
 	target := cg.calculateRelativeJumpAddress(instr)
-	toBlock, ok := cg.irBlocks[target]
-	if !ok {
-		return fmt.Errorf("cannot find jr e destination block")
-	}
-
 	irBlock.NewStore(constant.NewInt(types.I16, int64(target)), cg.pc)
-	irBlock.NewBr(toBlock)
+	irBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
 
@@ -741,16 +716,6 @@ func (cg *Codegen) jr_cc_e(instr *decoder.Instruction, irBlock *ir.Block) error 
 	cg.increaseCycles(instr, irBlock)
 
 	target := cg.calculateRelativeJumpAddress(instr)
-	toBlock, ok := cg.irBlocks[target]
-	if !ok {
-		return fmt.Errorf("cannot find jr cc e destination block")
-	}
-
-	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
-	if !ok {
-		return fmt.Errorf("cannot find jr cc e fallthrough block")
-	}
-
 	cond := cg.loadCondition(irBlock, instr.JumpCondition)
 	takenBlock := cg.main.NewBlock(fmt.Sprintf("jr_cc_taken_%04X", instr.Address))
 	nextPC := irBlock.NewSelect(
@@ -759,9 +724,9 @@ func (cg *Codegen) jr_cc_e(instr *decoder.Instruction, irBlock *ir.Block) error 
 		constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)),
 	)
 	irBlock.NewStore(nextPC, cg.pc)
-	irBlock.NewCondBr(cond, takenBlock, fallthroughBlock)
+	irBlock.NewCondBr(cond, takenBlock, cg.retDispatchBlock)
 	cg.increaseAdditionalCycles(instr, takenBlock)
-	takenBlock.NewBr(toBlock)
+	takenBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
 
@@ -773,31 +738,13 @@ func (cg *Codegen) call_nn(instr *decoder.Instruction, irBlock *ir.Block) error 
 		return err
 	}
 
-	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
-	if !ok {
-		// out-of-image (e.g. hram) callsite: dispatch at runtime
-		irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
-		irBlock.NewBr(cg.retDispatchBlock)
-		return nil
-	}
-
 	irBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
-	irBlock.NewBr(toBlock)
+	irBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
 
 func (cg *Codegen) call_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
-
-	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
-	if !ok {
-		return fmt.Errorf("cannot find call cc nn fallthrough block for 0x%04X", instr.Address)
-	}
-
-	toBlock, ok := cg.irBlocks[instr.Imm16Bit]
-	if !ok {
-		toBlock = cg.retDispatchBlock
-	}
 
 	cond := cg.loadCondition(irBlock, instr.JumpCondition)
 	nextPC := irBlock.NewSelect(
@@ -807,16 +754,14 @@ func (cg *Codegen) call_cc_nn(instr *decoder.Instruction, irBlock *ir.Block) err
 	)
 	irBlock.NewStore(nextPC, cg.pc)
 	takenBlock := cg.main.NewBlock(fmt.Sprintf("call_taken_%04X", instr.Address))
-	irBlock.NewCondBr(cond, takenBlock, fallthroughBlock)
+	irBlock.NewCondBr(cond, takenBlock, cg.retDispatchBlock)
 
 	retAddr := constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length))
 	if err := cg.pushReturnAddress(takenBlock, retAddr); err != nil {
 		return err
 	}
 	cg.increaseAdditionalCycles(instr, takenBlock)
-
-	takenBlock.NewStore(constant.NewInt(types.I16, int64(instr.Imm16Bit)), cg.pc)
-	takenBlock.NewBr(toBlock)
+	takenBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }
 
@@ -862,16 +807,11 @@ func (cg *Codegen) ret_cc(instr *decoder.Instruction, irBlock *ir.Block) error {
 		return fmt.Errorf("return dispatch block is not set up")
 	}
 
-	fallthroughBlock, ok := cg.irBlocks[instr.Address+uint16(instr.Length)]
-	if !ok {
-		return fmt.Errorf("cannot find ret cc fallthrough block")
-	}
-
 	cond := cg.loadCondition(irBlock, instr.JumpCondition)
 	takenBlock := cg.main.NewBlock(fmt.Sprintf("ret_taken_%04X", instr.Address))
 	skipBlock := cg.main.NewBlock(fmt.Sprintf("ret_skip_%04X", instr.Address))
 	skipBlock.NewStore(constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length)), cg.pc)
-	skipBlock.NewBr(fallthroughBlock)
+	skipBlock.NewBr(cg.retDispatchBlock)
 	irBlock.NewCondBr(cond, takenBlock, skipBlock)
 
 	retAddr, err := cg.popReturnAddress(takenBlock)
@@ -906,17 +846,12 @@ func (cg *Codegen) jp_hl(instr *decoder.Instruction, irBlock *ir.Block) error {
 func (cg *Codegen) rst_n(instr *decoder.Instruction, irBlock *ir.Block) error {
 	cg.increaseCycles(instr, irBlock)
 
-	toBlock, ok := cg.irBlocks[instr.CallFunctionAddress]
-	if !ok {
-		return fmt.Errorf("cannot find rst nn destination block")
-	}
-
 	retAddr := constant.NewInt(types.I16, int64(instr.Address)+int64(instr.Length))
 	if err := cg.pushReturnAddress(irBlock, retAddr); err != nil {
 		return err
 	}
 
 	irBlock.NewStore(constant.NewInt(types.I16, int64(instr.CallFunctionAddress)), cg.pc)
-	irBlock.NewBr(toBlock)
+	irBlock.NewBr(cg.retDispatchBlock)
 	return nil
 }

@@ -12,7 +12,6 @@ typedef enum {
 } Interrupt;
 
 extern uint8_t IME;
-extern void (*int_handlers[5])(void);
 
 uint8_t if_read();
 uint8_t ie_read();
@@ -20,7 +19,7 @@ void if_write(uint8_t v);
 void ie_write(uint8_t v);
 
 void interrupt_request(Interrupt i);
-void interrupt_dispatch();
 void interrupt_init();
+uint16_t interrupt_service();
 
 #endif

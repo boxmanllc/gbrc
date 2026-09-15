@@ -7,13 +7,12 @@
 #define DOTS_PER_LINE 456
 #define LINES_PER_FRAME 154
 #define VBLANK_LINE 144
-#define MODE2_DOTS 80  // oam scan
-#define MODE3_DOTS 172 // drawing (fixed length; real hw varies)
+#define MODE2_DOTS 80
+#define MODE3_DOTS 172
 
 static Ppu ppu;
 void (*ppu_present)(const uint8_t *) = 0;
 
-// forward declarations of internal helpers
 static uint8_t shade(uint8_t palette, uint8_t color);
 static void oam_dma(uint8_t val);
 static void update_mode_and_stat(Ppu *ppu);
@@ -23,17 +22,16 @@ static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
 
 void ppu_init_impl(Ppu *ppu) {
 	memset(ppu, 0, sizeof(*ppu));
-	ppu->lcdc = 0x91; // lcd on, bg on, tile data $8000, bg map $9800
-	ppu->bgp = 0xFC;  // boot palette
+	ppu->lcdc = 0x91;
+	ppu->bgp = 0xFC;
 	ppu->last_cycles = 0;
 }
 
 void ppu_tick_impl(Ppu *ppu) {
 	uint32_t now = cycles;
-	uint32_t dt = (now - ppu->last_cycles) * 4; // 4 dots per machine cycle
+	uint32_t dt = (now - ppu->last_cycles) * 4;
 	ppu->last_cycles = now;
 
-	// lcd off: the ppu is reset and held at line 0 / mode 0
 	if (!(ppu->lcdc & 0x80)) {
 		ppu->ly = 0;
 		ppu->dot = 0;
@@ -46,7 +44,6 @@ void ppu_tick_impl(Ppu *ppu) {
 	while (ppu->dot >= DOTS_PER_LINE) {
 		ppu->dot -= DOTS_PER_LINE;
 
-		// the scanline `ly` just completed; draw it if it was visible
 		if (ppu->ly < GB_LCD_HEIGHT)
 			render_scanline(ppu, ppu->ly);
 
@@ -66,29 +63,27 @@ void ppu_tick_impl(Ppu *ppu) {
 static void update_mode_and_stat(Ppu *ppu) {
 	uint8_t mode;
 	if (ppu->ly >= GB_LCD_HEIGHT)
-		mode = 1; // vblank
+		mode = 1;
 	else if (ppu->dot < MODE2_DOTS)
-		mode = 2; // oam scan
+		mode = 2;
 	else if (ppu->dot < MODE2_DOTS + MODE3_DOTS)
-		mode = 3; // drawing
+		mode = 3;
 	else
-		mode = 0; // hblank
+		mode = 0;
 	ppu->mode = mode;
 
 	bool coincidence = (ppu->ly == ppu->lyc);
 
-	// the stat interrupt line is the OR of the enabled sources
 	bool line = false;
 	if ((ppu->stat & 0x08) && mode == 0)
-		line = true; // hblank select
+		line = true;
 	if ((ppu->stat & 0x10) && mode == 1)
-		line = true; // vblank select
+		line = true;
 	if ((ppu->stat & 0x20) && mode == 2)
-		line = true; // oam select
+		line = true;
 	if ((ppu->stat & 0x40) && coincidence)
-		line = true; // lyc select
+		line = true;
 
-	// stat interrupt fires on a rising edge of that line
 	if (line && !ppu->stat_line)
 		interrupt_request(INT_STAT);
 	ppu->stat_line = line;
@@ -100,7 +95,7 @@ uint8_t ppu_read_impl(Ppu *ppu, uint16_t addr) {
 	case 0xFF40:
 		return ppu->lcdc;
 	case 0xFF41:
-		// bit7 reads 1, bits 3-6 selects, bit2 coincidence, bits 0-1 mode
+
 		return 0x80 | (ppu->stat & 0x78) |
 		       ((ppu->ly == ppu->lyc) ? 0x04 : 0x00) | (ppu->mode & 3);
 	case 0xFF42:
@@ -132,7 +127,7 @@ void ppu_write_impl(Ppu *ppu, uint16_t addr, uint8_t val) {
 		ppu->lcdc = val;
 		break;
 	case 0xFF41:
-		ppu->stat = val & 0x78; // only the select bits are writable
+		ppu->stat = val & 0x78;
 		break;
 	case 0xFF42:
 		ppu->scy = val;
@@ -141,7 +136,7 @@ void ppu_write_impl(Ppu *ppu, uint16_t addr, uint8_t val) {
 		ppu->scx = val;
 		break;
 	case 0xFF44:
-		break; // ly is read-only
+		break;
 	case 0xFF45:
 		ppu->lyc = val;
 		break;
@@ -166,22 +161,19 @@ void ppu_write_impl(Ppu *ppu, uint16_t addr, uint8_t val) {
 	}
 }
 
-// $FF46: copy 160 bytes from $XX00 (val = XX) into OAM at $FE00.
-// ponytail: instantaneous copy; real hw takes ~160 machine cycles.
 static void oam_dma(uint8_t val) {
 	uint16_t src = (uint16_t)val << 8;
 	for (uint16_t i = 0; i < 0xA0; i++)
 		ram[0xFE00 + i] = ram[src + i];
 }
 
-// map a 2-bit color index through a palette register to a 2-bit shade
 static uint8_t shade(uint8_t palette, uint8_t color) {
 	return (palette >> (color * 2)) & 3;
 }
 
 static void render_scanline(Ppu *ppu, uint8_t ly) {
 	uint8_t *line = &ppu->framebuffer[ly * GB_LCD_WIDTH];
-	uint8_t bg_color[GB_LCD_WIDTH]; // raw bg color index, for sprite priority
+	uint8_t bg_color[GB_LCD_WIDTH];
 
 	bool unsigned_tiles = ppu->lcdc & 0x10;
 	uint16_t bg_map = (ppu->lcdc & 0x08) ? 0x9C00 : 0x9800;
@@ -191,10 +183,10 @@ static void render_scanline(Ppu *ppu, uint8_t ly) {
 	for (int x = 0; x < GB_LCD_WIDTH; x++) {
 		uint8_t color = 0;
 
-		if (ppu->lcdc & 0x01) { // bg & window enable (DMG)
+		if (ppu->lcdc & 0x01) {
 			bool in_window = win_on_line && (x >= (int)ppu->wx - 7);
 			uint16_t map;
-			uint8_t px, py; // coordinate inside the 256x256 map space
+			uint8_t px, py;
 			if (in_window) {
 				map = win_map;
 				px = (uint8_t)(x - ((int)ppu->wx - 7));
@@ -223,7 +215,7 @@ static void render_scanline(Ppu *ppu, uint8_t ly) {
 		line[x] = shade(ppu->bgp, color);
 	}
 
-	if (ppu->lcdc & 0x02) // obj enable
+	if (ppu->lcdc & 0x02)
 		render_sprites(ppu, ly, line, bg_color);
 }
 
@@ -231,7 +223,6 @@ static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
                            const uint8_t *bg_color) {
 	uint8_t height = (ppu->lcdc & 0x04) ? 16 : 8;
 
-	// gather up to 10 sprites intersecting this line (hardware limit)
 	int chosen[10];
 	int count = 0;
 	for (int i = 0; i < 40 && count < 10; i++) {
@@ -240,8 +231,6 @@ static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
 			chosen[count++] = i;
 	}
 
-	// order lowest priority first so higher priority draws on top.
-	// DMG priority: smaller x wins; on a tie, smaller OAM index wins.
 	for (int a = 0; a < count; a++) {
 		for (int b = a + 1; b < count; b++) {
 			int ax = ram[0xFE00 + chosen[a] * 4 + 1];
@@ -270,7 +259,7 @@ static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
 		if (flip_y)
 			row = height - 1 - row;
 		if (height == 16)
-			tile &= 0xFE; // 8x16 sprites use an even base tile
+			tile &= 0xFE;
 		uint16_t tile_addr = 0x8000 + tile * 16 + row * 2;
 		uint8_t lo = ram[tile_addr];
 		uint8_t hi = ram[tile_addr + 1];
@@ -283,9 +272,9 @@ static void render_sprites(Ppu *ppu, uint8_t ly, uint8_t *line,
 			uint8_t color =
 			    (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
 			if (color == 0)
-				continue; // color 0 is transparent for sprites
+				continue;
 			if (behind_bg && bg_color[x] != 0)
-				continue; // hidden behind bg colors 1-3
+				continue;
 			line[x] = shade(pal, color);
 		}
 	}

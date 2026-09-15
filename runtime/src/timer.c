@@ -20,32 +20,23 @@ void timer_init_impl(Timer *tmr) {
 }
 
 void timer_tick_impl(Timer *tmr) {
-	// no. of M-cycles currently
+
 	uint32_t now = cycles;
-	// no. of T-cycles since last catch up
+
 	uint32_t dt = (now - tmr->last_cycles) * 4;
 	tmr->last_cycles = now;
 
 	tmr->div_counter += dt;
 
-	// bit 2 of TAC checks if timer enabled
-	// if enabled, run TIMA
 	if (tmr->tac & 0x04) {
 		tmr->tima_accum += dt;
-		/*
-		 * period is how many T-cycles make one TIMA increment
-		 * only get lower 2 bytes (TAC & 3)
-		 * tima_period[0] => 0b00 : CPU Clock / 1024
-		 * tima_period[1] => 0b01 : CPU Clock / 16
-		 * tima_period[2] => 0b10 : CPU Clock / 64
-		 * tima_period[3] => 0b11 : CPU Clock / 256
-		 */
+
 		uint32_t period = tima_period[tmr->tac & 3];
 		while (tmr->tima_accum >= period) {
 			tmr->tima_accum -= period;
-			// if overflow
+
 			if (tmr->tima == 0xFF) {
-				tmr->tima = tmr->tma; // reload from TMA
+				tmr->tima = tmr->tma;
 				interrupt_request(INT_TIMER);
 			} else {
 				tmr->tima++;
@@ -64,8 +55,7 @@ uint8_t timer_read_impl(Timer *tmr, uint16_t addr) {
 	case TMA:
 		return tmr->tma;
 	case TAC:
-		// unused top 5 bits read as 1
-		// 0xF8 = 0b1111_1000
+
 		return tmr->tac | 0xF8;
 	}
 	return 0xFF;
@@ -89,7 +79,6 @@ void timer_write_impl(Timer *tmr, uint16_t addr, uint8_t val) {
 	}
 }
 
-// no arg wrappers
 void timer_init(void) { timer_init_impl(&tmr); };
 void timer_tick(void) { timer_tick_impl(&tmr); };
 uint8_t timer_read(uint16_t addr) { return timer_read_impl(&tmr, addr); };

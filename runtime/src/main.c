@@ -1,10 +1,12 @@
+#include "frontend.h"
 #include "gb.h"
 #include "interrupt.h"
 #include "joypad.h"
 #include "ppu.h"
-#include "ram.h"
 #include "timer.h"
 #include <stdio.h>
+
+#define CYCLES_PER_FRAME 17556
 
 void gb_init() {
 	interrupt_init();
@@ -14,9 +16,26 @@ void gb_init() {
 }
 
 int main() {
+	if (!frontend_init()) {
+		fprintf(stderr, "failed to initialize frontend\n");
+		return 1;
+	}
+
+	ppu_present = frontend_present;
 	gb_init();
-	rom_main();
-	printf("cycles=%d ram[0xC000]=%02X joypad[0xFF00]=%02X\n", cycles,
-	       read_ram(0xC000), read_ram(0xFF00));
+
+	g_budget = CYCLES_PER_FRAME;
+	for (;;) {
+		frontend_poll();
+		if (frontend_should_quit())
+			break;
+
+		rom_main();
+		ppu_tick();
+		g_budget = cycles + CYCLES_PER_FRAME;
+		frontend_wait_frame();
+	}
+
+	frontend_close();
 	return 0;
 }

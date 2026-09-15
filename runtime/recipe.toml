@@ -2,50 +2,15 @@
 GAME = "game"
 OUT = "rom.o"
 BUILD_PATH = "../build"
-OBJ_COPY_FLAGS = "--redefine-sym main=rom_main"
+SDL_FLAGS = "$(pkg-config --cflags sdl2)"
+SDL_LIBS = "$(pkg-config --libs sdl2)"
 
 [pre.out]
-cmd = """
-clang -c $BUILD_PATH/test.ll -o $BUILD_PATH/$OUT &&
-objcopy $OBJ_COPY_FLAGS $BUILD_PATH/$OUT
-"""
+cmd = "clang -c $BUILD_PATH/game.ll -o $BUILD_PATH/$OUT"
 
 [build]
-cmd = "clang -Iinclude ./src/*.c $BUILD_PATH/$OUT -o $BUILD_PATH/$GAME"
-
-[custom.setup]
-cmd = """
-rgbasm -o $BUILD_PATH/test.o ../tests/test.asm &&
-rgblink -o $BUILD_PATH/test.gb $BUILD_PATH/test.o &&
-go run .. --rom=$BUILD_PATH/test.gb --debug
-"""
-run = false
+cmd = "clang -Iinclude $SDL_FLAGS ./src/*.c $BUILD_PATH/$OUT $SDL_LIBS -o $BUILD_PATH/$GAME"
 
 [custom.run]
 cmd = "$BUILD_PATH/$GAME"
 run = true
-
-# remove this later
-[custom.interrupt-test]
-cmd = "clang -Iinclude tests/interrupt_check.c src/interrupt.c -o $BUILD_PATH/interrupt_check && $BUILD_PATH/interrupt_check"
-run = false
-
-[custom.joypad-test]
-cmd = "clang -Iinclude tests/joypad_check.c src/joypad.c -o $BUILD_PATH/joypad_check && $BUILD_PATH/joypad_check"
-run = false
-
-[custom.timer-test]
-cmd = "clang -Iinclude tests/timer_check.c src/timer.c src/interrupt.c -o $BUILD_PATH/timer_check && $BUILD_PATH/timer_check"
-run = false
-
-[custom.ppu-test]
-cmd = "clang -Iinclude tests/ppu_check.c src/ppu.c src/interrupt.c -o $BUILD_PATH/ppu_check && $BUILD_PATH/ppu_check"
-run = false
-
-[custom.test]
-cmd = """
-bake interrupt-test &&
-bake joypad-test &&
-bake timer-test &&
-bake ppu-test
-"""

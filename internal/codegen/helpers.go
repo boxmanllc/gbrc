@@ -2,7 +2,7 @@ package codegen
 
 import (
 	"fmt"
-	"regexp"
+	"strings"
 
 	"github.com/0xmukesh/boxman/internal/decoder"
 	"github.com/llir/llvm/ir"
@@ -13,16 +13,16 @@ import (
 )
 
 type reg16Store struct {
-	msb, lsb   value.Value // value of two 8-bit registers which are composed together to create 16-bit register
-	val        value.Value // raw value of 16-bit register
-	isSplitUp  bool        // whether register's value composes of a single 16-bit register or combination of two 8-bit register
-	hasFlagReg bool        // whether F register is involved
+	msb, lsb   value.Value
+	val        value.Value
+	isSplitUp  bool
+	hasFlagReg bool
 }
 
-var mnemonicPat = regexp.MustCompile(`[ ,()]`)
+var mnemonicReplacer = strings.NewReplacer(" ", "_", ",", "_", "(", "_", ")", "_")
 
 func mnemonicToFuncName(mnemonic string) string {
-	return mnemonicPat.ReplaceAllString(mnemonic, "_")
+	return mnemonicReplacer.Replace(mnemonic)
 }
 
 func (cg *Codegen) getRamPtr(irBlock *ir.Block, addr value.Value) value.Value {
@@ -36,10 +36,8 @@ func (cg *Codegen) readMemory(irBlock *ir.Block, addr value.Value) value.Value {
 }
 
 func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
-	// keep @ram in sync and let the runtime handle i/o register semantics
-	// (joypad select, LY stub, etc.).
+
 	irBlock.NewCall(cg.writeRam, addr, val)
-	irBlock.NewStore(val, cg.getRamPtr(irBlock, addr))
 }
 
 func (cg *Codegen) findReg8GlobalDef(reg8 decoder.Reg8) (*ir.Global, error) {
@@ -275,8 +273,6 @@ func (cg *Codegen) calculateRelativeJumpAddress(instr *decoder.Instruction) uint
 	return uint16(int16(instr.Address) + int16(instr.Length) + int16(int8(instr.Imm8Bit)))
 }
 
-// loadCondition returns an i1 value which is true when the given jump
-// condition is satisfied.
 func (cg *Codegen) loadCondition(irBlock *ir.Block, cond decoder.JumpCondition) value.Value {
 	switch cond {
 	case decoder.C:
@@ -285,13 +281,11 @@ func (cg *Codegen) loadCondition(irBlock *ir.Block, cond decoder.JumpCondition) 
 		return irBlock.NewXor(irBlock.NewLoad(types.I1, cg.cFlag), constant.NewInt(types.I1, 1))
 	case decoder.Z:
 		return irBlock.NewLoad(types.I1, cg.zFlag)
-	default: // NZ
+	default:
 		return irBlock.NewXor(irBlock.NewLoad(types.I1, cg.zFlag), constant.NewInt(types.I1, 1))
 	}
 }
 
-// pushReturnAddress pushes the two bytes of the return address on the stack,
-// mirroring the PUSH r16 behaviour.
 func (cg *Codegen) pushReturnAddress(irBlock *ir.Block, retAddr value.Value) error {
 	sp, err := cg.findReg16GlobalDefs(irBlock, decoder.Reg16SP)
 	if err != nil {
@@ -314,8 +308,6 @@ func (cg *Codegen) pushReturnAddress(irBlock *ir.Block, retAddr value.Value) err
 	return nil
 }
 
-// popReturnAddress pops the two bytes of the return address from the stack,
-// mirroring the POP r16 behaviour.
 func (cg *Codegen) popReturnAddress(irBlock *ir.Block) (value.Value, error) {
 	sp, err := cg.findReg16GlobalDefs(irBlock, decoder.Reg16SP)
 	if err != nil {

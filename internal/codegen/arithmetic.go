@@ -23,12 +23,12 @@ type destConfig struct {
 
 type bit8ArithmeticConfig struct {
 	destConfig
-	toIncludeCarryFlag bool // whether to include carry flag within operations
+	toIncludeCarryFlag bool
 }
 
 type bitwiseConfig struct {
 	destConfig
-	updateZeroFlag bool // whether to set zero flag based on the final result
+	updateZeroFlag bool
 }
 
 const (
@@ -296,16 +296,16 @@ func (cg *Codegen) performBitOp(irBlock *ir.Block, opType bitOp, bitIndex, opera
 	}
 }
 
-func (cg *Codegen) calculateOffsetFlags(irBlock *ir.Block, spVal, offset value.Value) (hFlag, cFlag value.Value) {
-	spLow := irBlock.NewAnd(spVal, constant.NewInt(types.I16, 0x0F))
-	offsetLow := irBlock.NewAnd(offset, constant.NewInt(types.I16, 0x0F))
-	lowSum := irBlock.NewAdd(spLow, offsetLow)
+func (cg *Codegen) calculateOffsetFlags(irBlock *ir.Block, spVal, offsetSigned value.Value) (hFlag, cFlag value.Value) {
+	result := irBlock.NewAdd(spVal, offsetSigned)
+	xor := irBlock.NewXor(spVal, offsetSigned)
+	xor = irBlock.NewXor(xor, result)
 
-	spByte := irBlock.NewAnd(spVal, constant.NewInt(types.I16, 0xFF))
-	byteSum := irBlock.NewAdd(spByte, offset)
+	hMasked := irBlock.NewAnd(xor, constant.NewInt(types.I16, 0x10))
+	cMasked := irBlock.NewAnd(xor, constant.NewInt(types.I16, 0x100))
 
-	hFlag = irBlock.NewICmp(enum.IPredUGE, lowSum, constant.NewInt(types.I16, 0x10))
-	cFlag = irBlock.NewICmp(enum.IPredUGE, byteSum, constant.NewInt(types.I16, 0x100))
+	hFlag = irBlock.NewICmp(enum.IPredNE, hMasked, constant.NewInt(types.I16, 0))
+	cFlag = irBlock.NewICmp(enum.IPredNE, cMasked, constant.NewInt(types.I16, 0))
 	return hFlag, cFlag
 }
 

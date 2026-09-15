@@ -1,5 +1,6 @@
 #include "ram.h"
 #include "gb.h"
+#include "interrupt.h"
 #include "joypad.h"
 #include "ppu.h"
 #include "timer.h"
@@ -14,6 +15,8 @@ uint8_t read_ram(uint16_t addr) {
 	case 0xFF06:
 	case 0xFF07:
 		return timer_read(addr);
+	case 0xFF0F:
+		return if_read();
 	case 0xFF40:
 	case 0xFF41:
 	case 0xFF42:
@@ -27,10 +30,15 @@ uint8_t read_ram(uint16_t addr) {
 	case 0xFF4A:
 	case 0xFF4B:
 		return ppu_read(addr);
+	case 0xFFFF:
+		return ie_read();
 	default:
+		if (addr >= 0xE000 && addr <= 0xFDFF)
+			addr = (uint16_t)(addr - 0x2000);
 		return ram[addr];
 	}
 }
+
 void write_ram(uint16_t addr, uint8_t val) {
 	switch (addr) {
 	case 0xFF00:
@@ -41,6 +49,9 @@ void write_ram(uint16_t addr, uint8_t val) {
 	case 0xFF06:
 	case 0xFF07:
 		timer_write(addr, val);
+		return;
+	case 0xFF0F:
+		if_write(val);
 		return;
 	case 0xFF40:
 	case 0xFF41:
@@ -56,7 +67,14 @@ void write_ram(uint16_t addr, uint8_t val) {
 	case 0xFF4B:
 		ppu_write(addr, val);
 		return;
+	case 0xFFFF:
+		ie_write(val);
+		return;
 	default:
+		if (addr < 0x8000)
+			return;
+		if (addr >= 0xE000 && addr <= 0xFDFF)
+			addr = (uint16_t)(addr - 0x2000);
 		ram[addr] = val;
 	}
 }

@@ -23,6 +23,9 @@ extern bool c_flag;
 extern uint16_t pc;
 extern uint16_t sp;
 
+extern uint16_t block_starts[];
+extern uint32_t g_budget;
+
 extern uint32_t rom_main();
 
 void gb_init();

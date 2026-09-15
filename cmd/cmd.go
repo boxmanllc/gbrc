@@ -42,7 +42,9 @@ func Run() {
 	}
 
 	if toOptimize {
-		if _, err = exec.Command("opt", "-O2", "-S", irFilePath, "-o", irFilePath).Output(); err != nil {
+		optCmd := exec.Command("opt", "-O2", "-S", irFilePath, "-o", irFilePath)
+		optCmd.Stderr = os.Stderr
+		if err := optCmd.Run(); err != nil {
 			log.Fatalf("failed to optimize ir: %s", err)
 		}
 	}
@@ -54,16 +56,30 @@ func Run() {
 		}
 
 		runtimeInclude := filepath.Join(projectRoot, "runtime", "include")
-		mainC := filepath.Join(projectRoot, "runtime", "src", "main.c")
-		ramC := filepath.Join(projectRoot, "runtime", "src", "ram.c")
-		joypadC := filepath.Join(projectRoot, "runtime", "src", "joypad.c")
-		interruptC := filepath.Join(projectRoot, "runtime", "src", "interrupt.c")
+		runtimeSources, err := filepath.Glob(filepath.Join(projectRoot, "runtime", "src", "*.c"))
+		if err != nil || len(runtimeSources) == 0 {
+			log.Fatalf("failed to locate runtime sources: %s", err)
+		}
 
-		if _, err := exec.Command("clang", "-O0", "-g",
-			"-I"+runtimeInclude,
-			irFilePath,
-			mainC, ramC, joypadC, interruptC,
-			"-o", outFilePath).Output(); err != nil {
+		sdlCFlagsOut, err := exec.Command("pkg-config", "--cflags", "sdl2").Output()
+		if err != nil {
+			log.Fatalf("sdl2 not found: pkg-config --cflags sdl2 failed: %s", err)
+		}
+		sdlLibsOut, err := exec.Command("pkg-config", "--libs", "sdl2").Output()
+		if err != nil {
+			log.Fatalf("sdl2 not found: pkg-config --libs sdl2 failed: %s", err)
+		}
+
+		args := []string{"-O0", "-g", "-I" + runtimeInclude}
+		args = append(args, strings.Fields(string(sdlCFlagsOut))...)
+		args = append(args, irFilePath)
+		args = append(args, runtimeSources...)
+		args = append(args, strings.Fields(string(sdlLibsOut))...)
+		args = append(args, "-o", outFilePath)
+
+		compileCmd := exec.Command("clang", args...)
+		compileCmd.Stderr = os.Stderr
+		if err := compileCmd.Run(); err != nil {
 			log.Fatalf("failed to compile ir: %s", err)
 		}
 	}

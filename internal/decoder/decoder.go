@@ -115,6 +115,8 @@ const (
 	CB_RES_HL
 	CB_SET_R8
 	CB_SET_HL
+	HALT
+	STOP
 )
 
 const (
@@ -242,6 +244,17 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.BaseMCycles = 2
 		instr.Reg8Src = reg8FromEncoding(opcode)
 		instr.Mnemonic = fmt.Sprintf("LD (HL),%s", instr.Reg8Src.String())
+	case 0x76:
+		instr.InstructionType = HALT
+		instr.Length = 1
+		instr.BaseMCycles = 4
+		instr.Mnemonic = "HALT"
+	case 0x10:
+		instr.InstructionType = STOP
+		instr.Length = 2
+		instr.BaseMCycles = 1
+		instr.Imm8Bit = d.rom.Read(addr + 1)
+		instr.Mnemonic = "STOP"
 	case 0x36:
 		instr.InstructionType = LD_HL_N
 		instr.Length = 2
@@ -346,7 +359,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.BaseMCycles = 4
 
 		reg16 := reg16FromEncoding(opcode >> 4)
-		if opcode == 0xF5 { // PUSH AF
+		if opcode == 0xF5 {
 			reg16 = Reg16AF
 		}
 
@@ -358,7 +371,7 @@ func (d *Decoder) decodeOpcode(opcode uint8, addr uint16) *Instruction {
 		instr.BaseMCycles = 3
 
 		reg16 := reg16FromEncoding(opcode >> 4)
-		if opcode == 0xF1 { // POP AF
+		if opcode == 0xF1 {
 			reg16 = Reg16AF
 		}
 
@@ -789,7 +802,6 @@ func (d *Decoder) decodeCbPrefixedOpcode(opcode uint8, addr uint16) *Instruction
 	return instr
 }
 
-// reg8FromEncoding maps the 3-bit register encoding used in opcodes to Reg8.
 func reg8FromEncoding(enc uint8) Reg8 {
 	switch enc & 0x07 {
 	case 0:
@@ -811,7 +823,6 @@ func reg8FromEncoding(enc uint8) Reg8 {
 	}
 }
 
-// reg16FromEncoding maps the 2-bit register pair encoding used in opcodes to Reg16.
 func reg16FromEncoding(enc uint8) Reg16 {
 	switch enc & 0x03 {
 	case 0:
