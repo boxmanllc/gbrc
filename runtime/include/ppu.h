@@ -25,6 +25,9 @@ typedef struct {
 	uint8_t mode;
 	bool stat_line;
 
+	uint8_t win_line;
+	bool win_y_cond;
+
 	uint8_t framebuffer[GB_LCD_HEIGHT * GB_LCD_WIDTH];
 } Ppu;
 

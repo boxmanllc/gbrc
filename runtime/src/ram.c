@@ -1,4 +1,5 @@
 #include "ram.h"
+#include "apu.h"
 #include "gb.h"
 #include "interrupt.h"
 #include "joypad.h"
@@ -7,6 +8,9 @@
 #include <stdint.h>
 
 uint8_t read_ram(uint16_t addr) {
+	if (addr >= 0xFF10 && addr <= 0xFF3F)
+		return apu_read(addr);
+
 	switch (addr) {
 	case 0xFF00:
 		return joypad_read();
@@ -40,6 +44,11 @@ uint8_t read_ram(uint16_t addr) {
 }
 
 void write_ram(uint16_t addr, uint8_t val) {
+	if (addr >= 0xFF10 && addr <= 0xFF3F) {
+		apu_write(addr, val);
+		return;
+	}
+
 	switch (addr) {
 	case 0xFF00:
 		joypad_write(val);

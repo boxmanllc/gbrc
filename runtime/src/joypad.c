@@ -1,4 +1,5 @@
 #include "joypad.h"
+#include "interrupt.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -21,7 +22,6 @@ uint8_t joypad_read_impl(Jp *pad) {
 		for (int i = 0; i < 4; ++i) {
 			int idx = (int)DPAD_BUTTONS[i];
 			if (pad->buttons[idx])
-
 				ret &= ~(1u << (idx & 3));
 		}
 	}
@@ -38,17 +38,24 @@ uint8_t joypad_read_impl(Jp *pad) {
 	return ret;
 }
 
-void joypad_press_impl(Jp *pad, Button button, bool pressed) {
-	pad->buttons[button] = pressed;
-}
-
 void joypad_write_impl(Jp *pad, uint8_t val) {
-
 	uint8_t face_bit = (val >> FACE_SELECT_BIT) & 1u;
-
 	uint8_t dpad_bit = (val >> DPAD_SELECT_BIT) & 1u;
 	pad->face_selected = !face_bit;
 	pad->dpad_selected = !dpad_bit;
+}
+
+void joypad_press_impl(Jp *pad, Button button, bool pressed) {
+	int idx = (int)button;
+	if (idx < 0 || idx > 7)
+		return;
+
+	bool is_dpad = idx >= (int)RIGHT;
+	bool selected = is_dpad ? pad->dpad_selected : pad->face_selected;
+	if (pressed && !pad->buttons[idx] && selected)
+		interrupt_request(INT_JOYPAD);
+
+	pad->buttons[idx] = pressed;
 }
 
 void joypad_init() { joypad_init_impl(&joypad); }

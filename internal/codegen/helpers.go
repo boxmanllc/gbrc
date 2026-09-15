@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/0xmukesh/boxman/internal/decoder"
+	"github.com/boxmanllc/gbrc/internal/decoder"
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
-	"github.com/llir/llvm/ir/enum"
 	"github.com/llir/llvm/ir/types"
 	"github.com/llir/llvm/ir/value"
 )
@@ -36,7 +35,6 @@ func (cg *Codegen) readMemory(irBlock *ir.Block, addr value.Value) value.Value {
 }
 
 func (cg *Codegen) updateMemory(irBlock *ir.Block, addr value.Value, val value.Value) {
-
 	irBlock.NewCall(cg.writeRam, addr, val)
 }
 
@@ -118,25 +116,6 @@ func (cg *Codegen) readReg16(irBlock *ir.Block, reg16 reg16Store) value.Value {
 	}
 }
 
-func (cg *Codegen) resolveOperandAndDest(b *ir.Block, instr *decoder.Instruction) (value.Value, destType, value.Value, error) {
-	if instr.Reg8Src == decoder.Reg8HLIndirect {
-		hlReg, err := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
-		if err != nil {
-			return nil, 0, nil, err
-		}
-
-		hlVal := cg.readReg16(b, hlReg)
-		return cg.readMemory(b, hlVal), destHL, hlVal, nil
-	}
-
-	srcReg, err := cg.findReg8GlobalDef(instr.Reg8Src)
-	if err != nil {
-		return nil, 0, nil, err
-	}
-
-	return b.NewLoad(types.I8, srcReg), destReg, srcReg, nil
-}
-
 func (cg *Codegen) updateReg16(irBlock *ir.Block, reg16 reg16Store, newVal value.Value) {
 	if reg16.isSplitUp {
 		msb16 := irBlock.NewLShr(newVal, constant.NewInt(types.I16, 8))
@@ -211,6 +190,25 @@ func (cg *Codegen) updateFReg(irBlock *ir.Block, val value.Value) {
 	irBlock.NewStore(n, cg.nFlag)
 	irBlock.NewStore(h, cg.hFlag)
 	irBlock.NewStore(c, cg.cFlag)
+}
+
+func (cg *Codegen) resolveOperandAndDest(b *ir.Block, instr *decoder.Instruction) (value.Value, destType, value.Value, error) {
+	if instr.Reg8Src == decoder.Reg8HLIndirect {
+		hlReg, err := cg.findReg16GlobalDefs(b, decoder.Reg16HL)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+
+		hlVal := cg.readReg16(b, hlReg)
+		return cg.readMemory(b, hlVal), destHL, hlVal, nil
+	}
+
+	srcReg, err := cg.findReg8GlobalDef(instr.Reg8Src)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+
+	return b.NewLoad(types.I8, srcReg), destReg, srcReg, nil
 }
 
 func (cg *Codegen) buildVoidFunc(instr *decoder.Instruction, build func(*ir.Block) error) (*ir.Func, error) {
@@ -327,75 +325,4 @@ func (cg *Codegen) popReturnAddress(irBlock *ir.Block) (value.Value, error) {
 	lsb16 := irBlock.NewZExt(lsb, types.I16)
 	msb16 := irBlock.NewZExt(msb, types.I16)
 	return irBlock.NewOr(irBlock.NewShl(msb16, constant.NewInt(types.I16, 8)), lsb16), nil
-}
-
-func (cg *Codegen) setupDebugFunc() {
-	printfFunc := cg.module.NewFunc("printf", types.I32, ir.NewParam("", types.NewPointer(types.I8)))
-	printfFunc.Sig.Variadic = true
-
-	fmtStr := constant.NewCharArrayFromString("A=%02X B=%02X C=%02X D=%02X E=%02X H=%02X L=%02X F=%c%c%c%c cycles=%d pc=%04X\n\x00")
-	fmtGlobal := cg.module.NewGlobalDef("fmt", fmtStr)
-	fmtGlobal.Linkage = enum.LinkagePrivate
-	fmtGlobal.Immutable = true
-
-	debugFunc := cg.module.NewFunc("debug", types.Void)
-	cg.debugFunc = debugFunc
-	entry := debugFunc.NewBlock("entry")
-
-	aReg := entry.NewLoad(types.I8, cg.aReg)
-	bReg := entry.NewLoad(types.I8, cg.bReg)
-	cReg := entry.NewLoad(types.I8, cg.cReg)
-	dReg := entry.NewLoad(types.I8, cg.dReg)
-	eReg := entry.NewLoad(types.I8, cg.eReg)
-	hReg := entry.NewLoad(types.I8, cg.hReg)
-	lReg := entry.NewLoad(types.I8, cg.lReg)
-	zFlag := entry.NewLoad(types.I1, cg.zFlag)
-	nFlag := entry.NewLoad(types.I1, cg.nFlag)
-	hFlag := entry.NewLoad(types.I1, cg.hFlag)
-	cFlag := entry.NewLoad(types.I1, cg.cFlag)
-	cycles := entry.NewLoad(types.I32, cg.cycles)
-
-	zChar := entry.NewSelect(
-		zFlag,
-		constant.NewInt(types.I8, 'Z'),
-		constant.NewInt(types.I8, '-'),
-	)
-	nChar := entry.NewSelect(
-		nFlag,
-		constant.NewInt(types.I8, 'N'),
-		constant.NewInt(types.I8, '-'),
-	)
-	hChar := entry.NewSelect(
-		hFlag,
-		constant.NewInt(types.I8, 'H'),
-		constant.NewInt(types.I8, '-'),
-	)
-	cChar := entry.NewSelect(
-		cFlag,
-		constant.NewInt(types.I8, 'C'),
-		constant.NewInt(types.I8, '-'),
-	)
-
-	zChar32 := entry.NewZExt(zChar, types.I32)
-	nChar32 := entry.NewZExt(nChar, types.I32)
-	hChar32 := entry.NewZExt(hChar, types.I32)
-	cChar32 := entry.NewZExt(cChar, types.I32)
-
-	a32 := entry.NewZExt(aReg, types.I32)
-	b32 := entry.NewZExt(bReg, types.I32)
-	c32 := entry.NewZExt(cReg, types.I32)
-	d32 := entry.NewZExt(dReg, types.I32)
-	e32 := entry.NewZExt(eReg, types.I32)
-	h32 := entry.NewZExt(hReg, types.I32)
-	l32 := entry.NewZExt(lReg, types.I32)
-	pc32 := entry.NewZExt(entry.NewLoad(types.I16, cg.pc), types.I32)
-
-	zero := constant.NewInt(types.I32, 0)
-	fmtPtr := entry.NewGetElementPtr(fmtStr.Type(), fmtGlobal, zero, zero)
-
-	entry.NewCall(printfFunc, fmtPtr,
-		a32, b32, c32, d32, e32, h32, l32,
-		zChar32, nChar32, hChar32, cChar32, cycles, pc32,
-	)
-	entry.NewRet(nil)
 }

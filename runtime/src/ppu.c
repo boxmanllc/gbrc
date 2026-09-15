@@ -44,8 +44,18 @@ void ppu_tick_impl(Ppu *ppu) {
 	while (ppu->dot >= DOTS_PER_LINE) {
 		ppu->dot -= DOTS_PER_LINE;
 
-		if (ppu->ly < GB_LCD_HEIGHT)
+		if (ppu->ly < GB_LCD_HEIGHT) {
+			if (ppu->ly == ppu->wy)
+				ppu->win_y_cond = true;
+
+			bool win_shown = ppu->win_y_cond && (ppu->lcdc & 0x20) &&
+			                 ((int)ppu->wx - 7 < GB_LCD_WIDTH);
+
 			render_scanline(ppu, ppu->ly);
+
+			if (win_shown)
+				ppu->win_line++;
+		}
 
 		ppu->ly++;
 		if (ppu->ly == VBLANK_LINE) {
@@ -53,8 +63,13 @@ void ppu_tick_impl(Ppu *ppu) {
 			if (ppu_present)
 				ppu_present(ppu->framebuffer);
 		}
-		if (ppu->ly >= LINES_PER_FRAME)
+		if (ppu->ly >= LINES_PER_FRAME) {
 			ppu->ly = 0;
+			ppu->win_line = 0;
+			ppu->win_y_cond = false;
+		}
+
+		update_mode_and_stat(ppu);
 	}
 
 	update_mode_and_stat(ppu);
@@ -178,7 +193,7 @@ static void render_scanline(Ppu *ppu, uint8_t ly) {
 	bool unsigned_tiles = ppu->lcdc & 0x10;
 	uint16_t bg_map = (ppu->lcdc & 0x08) ? 0x9C00 : 0x9800;
 	uint16_t win_map = (ppu->lcdc & 0x40) ? 0x9C00 : 0x9800;
-	bool win_on_line = (ppu->lcdc & 0x20) && (ly >= ppu->wy);
+	bool win_on_line = (ppu->lcdc & 0x20) && ppu->win_y_cond;
 
 	for (int x = 0; x < GB_LCD_WIDTH; x++) {
 		uint8_t color = 0;
@@ -190,7 +205,7 @@ static void render_scanline(Ppu *ppu, uint8_t ly) {
 			if (in_window) {
 				map = win_map;
 				px = (uint8_t)(x - ((int)ppu->wx - 7));
-				py = (uint8_t)(ly - ppu->wy);
+				py = ppu->win_line;
 			} else {
 				map = bg_map;
 				px = (uint8_t)(x + ppu->scx);

@@ -3,8 +3,8 @@ package decoder
 import (
 	"fmt"
 
-	"github.com/0xmukesh/boxman/internal/rom"
-	"github.com/0xmukesh/boxman/internal/utils"
+	"github.com/boxmanllc/gbrc/internal/rom"
+	"github.com/boxmanllc/gbrc/internal/utils"
 )
 
 type InstructionType int

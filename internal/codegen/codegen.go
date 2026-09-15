@@ -5,8 +5,8 @@ import (
 	"math"
 	"os"
 
-	"github.com/0xmukesh/boxman/internal/analyzer"
-	"github.com/0xmukesh/boxman/internal/decoder"
+	"github.com/boxmanllc/gbrc/internal/analyzer"
+	"github.com/boxmanllc/gbrc/internal/decoder"
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
 	"github.com/llir/llvm/ir/enum"
@@ -37,9 +37,6 @@ type Codegen struct {
 	readMem   *ir.Func
 	interpRun *ir.Func
 	intSvc    *ir.Func
-
-	debug     bool
-	debugFunc *ir.Func
 }
 
 type function struct {
@@ -47,7 +44,7 @@ type function struct {
 	args   []value.Value
 }
 
-func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error) {
+func New(blocks []*analyzer.Block, romBytes []byte) (*Codegen, error) {
 	cg := &Codegen{
 		instrFuncs: make(map[string]*ir.Func),
 		irBlocks:   make(map[uint16]*ir.Block),
@@ -55,12 +52,8 @@ func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error
 
 	cg.module = ir.NewModule()
 	cg.main = cg.module.NewFunc("rom_main", types.I32)
-	cg.debug = debug
 
 	cg.emitGlobals(romBytes)
-	if cg.debug {
-		cg.setupDebugFunc()
-	}
 
 	bootEntry := cg.main.NewBlock("boot_entry")
 
@@ -81,7 +74,6 @@ func New(blocks []*analyzer.Block, romBytes []byte, debug bool) (*Codegen, error
 	}
 
 	if len(blocks) > 0 {
-
 		bootEntry.NewBr(cg.retDispatchBlock)
 	} else {
 		bootEntry.NewRet(constant.NewInt(types.I32, 0))
@@ -156,12 +148,9 @@ func (cg *Codegen) setupReadMemFunc() {
 
 func (cg *Codegen) emitBlock(block *analyzer.Block) error {
 	entry := cg.main.NewBlock(fmt.Sprintf("block_%04X", block.Start))
+
 	if err := cg.emitCalls(block, entry); err != nil {
 		return err
-	}
-
-	if cg.debug {
-		entry.NewCall(cg.debugFunc)
 	}
 
 	cg.irBlocks[block.Start] = entry
@@ -170,7 +159,6 @@ func (cg *Codegen) emitBlock(block *analyzer.Block) error {
 
 func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) error {
 	for _, instr := range block.Instructions {
-
 		if analyzer.IsBlockTerminator(instr) {
 			continue
 		}
@@ -191,7 +179,6 @@ func (cg *Codegen) emitCalls(block *analyzer.Block, irBlock *ir.Block) error {
 }
 
 func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*function, error) {
-
 	irFunc, ok := cg.instrFuncs[instr.Mnemonic]
 	if !ok {
 		var err error
@@ -330,50 +317,6 @@ func (cg *Codegen) emitInstruction(instr *decoder.Instruction) (*function, error
 	}, nil
 }
 
-func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
-	irBlock, ok := cg.irBlocks[block.Start]
-	if !ok {
-		return fmt.Errorf("can't find equivalent ir block for 0x%04X block", block.Start)
-	}
-
-	lastInstr := block.Instructions[len(block.Instructions)-1]
-
-	switch lastInstr.InstructionType {
-	case decoder.JP_NN:
-		return cg.jp_nn(lastInstr, irBlock)
-	case decoder.JP_CC_NN:
-		return cg.jp_cc_nn(lastInstr, irBlock)
-	case decoder.JR_E:
-		return cg.jr_e(lastInstr, irBlock)
-	case decoder.JR_CC_E:
-		return cg.jr_cc_e(lastInstr, irBlock)
-	case decoder.CALL_NN:
-		return cg.call_nn(lastInstr, irBlock)
-	case decoder.CALL_CC_NN:
-		return cg.call_cc_nn(lastInstr, irBlock)
-	case decoder.RET:
-		return cg.ret(lastInstr, irBlock)
-	case decoder.RETI:
-		return cg.reti(lastInstr, irBlock)
-	case decoder.RET_CC:
-		return cg.ret_cc(lastInstr, irBlock)
-	case decoder.JP_HL:
-		return cg.jp_hl(lastInstr, irBlock)
-	case decoder.RST_N:
-		return cg.rst_n(lastInstr, irBlock)
-	default:
-
-		if len(block.Successors) == 1 {
-			irBlock.NewStore(constant.NewInt(types.I16, int64(block.Successors[0])), cg.pc)
-			irBlock.NewBr(cg.retDispatchBlock)
-			return nil
-		}
-		irBlock.NewRet(constant.NewInt(types.I32, 0))
-	}
-
-	return nil
-}
-
 func (cg *Codegen) setupReturnDispatcher(blocks []*analyzer.Block) error {
 	starts := make([]uint16, 0, len(blocks))
 	for _, block := range blocks {
@@ -445,5 +388,48 @@ func (cg *Codegen) emitBlockStarts(starts []uint16) error {
 	elems = append(elems, constant.NewInt(types.I16, 0xFFFF))
 	typ := types.NewArray(uint64(len(starts)+1), types.I16)
 	cg.module.NewGlobalDef("block_starts", constant.NewArray(typ, elems...))
+	return nil
+}
+
+func (cg *Codegen) joinBlocks(block *analyzer.Block) error {
+	irBlock, ok := cg.irBlocks[block.Start]
+	if !ok {
+		return fmt.Errorf("can't find equivalent ir block for 0x%04X block", block.Start)
+	}
+
+	lastInstr := block.Instructions[len(block.Instructions)-1]
+
+	switch lastInstr.InstructionType {
+	case decoder.JP_NN:
+		return cg.jp_nn(lastInstr, irBlock)
+	case decoder.JP_CC_NN:
+		return cg.jp_cc_nn(lastInstr, irBlock)
+	case decoder.JR_E:
+		return cg.jr_e(lastInstr, irBlock)
+	case decoder.JR_CC_E:
+		return cg.jr_cc_e(lastInstr, irBlock)
+	case decoder.CALL_NN:
+		return cg.call_nn(lastInstr, irBlock)
+	case decoder.CALL_CC_NN:
+		return cg.call_cc_nn(lastInstr, irBlock)
+	case decoder.RET:
+		return cg.ret(lastInstr, irBlock)
+	case decoder.RETI:
+		return cg.reti(lastInstr, irBlock)
+	case decoder.RET_CC:
+		return cg.ret_cc(lastInstr, irBlock)
+	case decoder.JP_HL:
+		return cg.jp_hl(lastInstr, irBlock)
+	case decoder.RST_N:
+		return cg.rst_n(lastInstr, irBlock)
+	default:
+		if len(block.Successors) == 1 {
+			irBlock.NewStore(constant.NewInt(types.I16, int64(block.Successors[0])), cg.pc)
+			irBlock.NewBr(cg.retDispatchBlock)
+			return nil
+		}
+		irBlock.NewRet(constant.NewInt(types.I32, 0))
+	}
+
 	return nil
 }

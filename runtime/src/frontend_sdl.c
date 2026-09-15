@@ -1,3 +1,4 @@
+#include "apu.h"
 #include "frontend.h"
 #include "joypad.h"
 #include <SDL.h>
@@ -18,6 +19,7 @@ static const uint8_t PALETTE[4][3] = {
 static SDL_Window *g_window;
 static SDL_Renderer *g_renderer;
 static SDL_Texture *g_tex;
+static SDL_AudioDeviceID g_audio;
 static bool g_quit_req;
 
 static void set_button(Button b, bool down) { joypad_press(b, down); }
@@ -125,9 +127,31 @@ void frontend_present(const uint8_t *framebuffer) {
 
 bool frontend_should_quit(void) { return g_quit_req; }
 
+void frontend_present_audio(const int16_t *samples, int count) {
+	if (!g_audio || count <= 0)
+		return;
+
+	Uint32 queued = SDL_GetQueuedAudioSize(g_audio);
+	if (queued > (Uint32)(APU_SAMPLE_RATE * 2 * (int)sizeof(int16_t) / 4))
+		return;
+
+	SDL_QueueAudio(g_audio, samples, (Uint32)(count * sizeof(int16_t)));
+}
+
 bool frontend_init(const char *title) {
-	if (SDL_Init(SDL_INIT_VIDEO) != 0)
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0)
 		return false;
+
+	SDL_AudioSpec want, have;
+	SDL_zero(want);
+	want.freq = APU_SAMPLE_RATE;
+	want.format = AUDIO_S16SYS;
+	want.channels = 2;
+	want.samples = 1024;
+	want.callback = NULL;
+	g_audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+	if (g_audio)
+		SDL_PauseAudioDevice(g_audio, 0);
 
 	g_window =
 	    SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -168,6 +192,8 @@ bool frontend_init(const char *title) {
 }
 
 void frontend_close(void) {
+	if (g_audio)
+		SDL_CloseAudioDevice(g_audio);
 	if (g_tex)
 		SDL_DestroyTexture(g_tex);
 	if (g_renderer)
@@ -175,6 +201,7 @@ void frontend_close(void) {
 	if (g_window)
 		SDL_DestroyWindow(g_window);
 	SDL_Quit();
+	g_audio = 0;
 	g_tex = NULL;
 	g_renderer = NULL;
 	g_window = NULL;

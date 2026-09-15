@@ -3,11 +3,12 @@ package analyzer
 import (
 	"slices"
 
-	"github.com/0xmukesh/boxman/internal/decoder"
+	"github.com/boxmanllc/gbrc/internal/decoder"
 )
 
 type Analyzer struct {
-	decoder *decoder.Decoder
+	decoder    *decoder.Decoder
+	ExtraSeeds []uint16
 }
 
 type Block struct {
@@ -57,6 +58,9 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 	for _, seed := range seeds {
 		queue = a.enqueue(queue, blockStart, seed)
 	}
+	for _, seed := range a.ExtraSeeds {
+		queue = a.enqueue(queue, blockStart, seed)
+	}
 
 	for len(queue) > 0 {
 		start := queue[0]
@@ -64,6 +68,10 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 
 		if ownedBy[start] != nil {
 			if ownedBy[start].Start == start {
+				continue
+			}
+
+			if !a.isInstructionBoundary(ownedBy[start], start) {
 				continue
 			}
 
@@ -89,6 +97,14 @@ func (a *Analyzer) AnalyzeBlocks() []*Block {
 	return blocks
 }
 
+func (a *Analyzer) enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
+	if addr < ROM_END && !blockStart[addr] {
+		blockStart[addr] = true
+		return append(queue, addr)
+	}
+	return queue
+}
+
 func (a *Analyzer) collectBlock(ownedBy []*Block, blockStart []bool, start uint16) *Block {
 	block := &Block{Start: start}
 	addr := start
@@ -105,13 +121,26 @@ func (a *Analyzer) collectBlock(ownedBy []*Block, blockStart []bool, start uint1
 			if len(block.Instructions) == 0 {
 				return nil
 			}
-			block.End = addr
+			block.Successors = []uint16{addr}
+			return block
+		}
+
+		end := addr + uint16(instr.Length) - 1
+		if end >= ROM_END {
+			end = ROM_END - 1
+		}
+
+		if a.spansKnownStart(ownedBy, blockStart, addr, end) {
+			if len(block.Instructions) == 0 {
+				return nil
+			}
+			block.Successors = []uint16{addr}
 			return block
 		}
 
 		block.Instructions = append(block.Instructions, instr)
-		block.End = addr + uint16(instr.Length) - 1
-		a.claimBytes(ownedBy, block, addr, block.End)
+		block.End = end
+		a.claimBytes(ownedBy, block, addr, end)
 
 		if IsBlockTerminator(instr) {
 			block.Successors = a.findSuccessors(addr, instr)
@@ -122,36 +151,6 @@ func (a *Analyzer) collectBlock(ownedBy []*Block, blockStart []bool, start uint1
 	}
 
 	return block
-}
-
-func (a *Analyzer) cutBlock(ownedBy []*Block, block *Block, addr uint16) {
-	for i := addr; i <= block.End; i++ {
-		ownedBy[i] = nil
-	}
-
-	for i := 0; i < len(block.Instructions); i++ {
-		if block.Instructions[i].Address >= addr {
-			block.Instructions = block.Instructions[:i]
-			break
-		}
-	}
-
-	block.End = addr - 1
-	block.Successors = []uint16{addr}
-}
-
-func (a *Analyzer) claimBytes(ownedBy []*Block, block *Block, from, to uint16) {
-	for i := from; i <= to; i++ {
-		ownedBy[i] = block
-	}
-}
-
-func (a *Analyzer) enqueue(queue []uint16, blockStart []bool, addr uint16) []uint16 {
-	if addr < ROM_END && !blockStart[addr] {
-		blockStart[addr] = true
-		return append(queue, addr)
-	}
-	return queue
 }
 
 func (a *Analyzer) findSuccessors(addr uint16, instr *decoder.Instruction) []uint16 {
@@ -190,4 +189,50 @@ func (a *Analyzer) findSuccessors(addr uint16, instr *decoder.Instruction) []uin
 
 func (a *Analyzer) calculateRelativeJumpAddress(addr uint16, instr *decoder.Instruction) uint16 {
 	return uint16(int16(addr) + int16(instr.Length) + int16(int8(instr.Imm8Bit)))
+}
+
+func (a *Analyzer) cutBlock(ownedBy []*Block, block *Block, addr uint16) {
+	for i := addr; i <= block.End && int(i) < len(ownedBy); i++ {
+		ownedBy[i] = nil
+	}
+
+	for i := 0; i < len(block.Instructions); i++ {
+		if block.Instructions[i].Address >= addr {
+			block.Instructions = block.Instructions[:i]
+			break
+		}
+	}
+
+	block.End = addr - 1
+	block.Successors = []uint16{addr}
+}
+
+func (a *Analyzer) claimBytes(ownedBy []*Block, block *Block, from, to uint16) {
+	for i := from; i <= to && int(i) < len(ownedBy); i++ {
+		ownedBy[i] = block
+	}
+}
+
+func (a *Analyzer) spansKnownStart(ownedBy []*Block, blockStart []bool, from, to uint16) bool {
+	for i := from + 1; i <= to; i++ {
+		if int(i) < len(blockStart) && (blockStart[i] || ownedBy[i] != nil) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *Analyzer) isInstructionBoundary(block *Block, addr uint16) bool {
+	for _, instr := range block.Instructions {
+		if instr.Address == addr {
+			return true
+		}
+
+		if instr.Address > addr {
+			return false
+		}
+	}
+
+	return false
 }

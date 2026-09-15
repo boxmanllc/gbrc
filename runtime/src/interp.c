@@ -1,6 +1,7 @@
 #include "interp.h"
 #include "gb.h"
 #include "interrupt.h"
+#include "profile.h"
 #include "ram.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -90,11 +91,12 @@ static void set_reg8(uint8_t enc, uint8_t v) {
 }
 
 static uint16_t read16(uint16_t addr) {
-	return (uint16_t)ram[addr] | (uint16_t)ram[addr + 1] << 8;
+	return (uint16_t)read_ram(addr) | (uint16_t)read_ram((uint16_t)(addr + 1))
+	                                      << 8;
 }
 static void write16(uint16_t addr, uint16_t v) {
-	ram[addr] = (uint8_t)v;
-	ram[addr + 1] = (uint8_t)(v >> 8);
+	write_ram(addr, (uint8_t)v);
+	write_ram((uint16_t)(addr + 1), (uint8_t)(v >> 8));
 }
 static void push16(uint16_t v) {
 	sp -= 2;
@@ -365,6 +367,8 @@ static void cb_exec(uint16_t addr) {
 
 uint16_t interp_run(uint16_t start_pc) {
 	uint16_t p = start_pc;
+
+	profile_record(start_pc);
 
 	for (;;) {
 		if (is_block_start(p))

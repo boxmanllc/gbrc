@@ -1,7 +1,7 @@
 package main
 
-import "github.com/0xmukesh/boxman/cmd"
+import "github.com/boxmanllc/gbrc/cmd"
 
 func main() {
-	cmd.Run()
+	cmd.Run(runtimeFS)
 }

@@ -1,6 +1,6 @@
 package analyzer
 
-import "github.com/0xmukesh/boxman/internal/decoder"
+import "github.com/boxmanllc/gbrc/internal/decoder"
 
 func IsBlockTerminator(instr *decoder.Instruction) bool {
 	switch instr.InstructionType {

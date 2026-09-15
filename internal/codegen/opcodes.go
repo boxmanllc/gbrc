@@ -3,7 +3,7 @@ package codegen
 import (
 	"fmt"
 
-	"github.com/0xmukesh/boxman/internal/decoder"
+	"github.com/boxmanllc/gbrc/internal/decoder"
 	"github.com/llir/llvm/ir"
 	"github.com/llir/llvm/ir/constant"
 	"github.com/llir/llvm/ir/enum"

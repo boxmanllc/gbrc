@@ -1,4 +1,4 @@
-module github.com/0xmukesh/boxman
+module github.com/boxmanllc/gbrc
 
 go 1.26.5
 
