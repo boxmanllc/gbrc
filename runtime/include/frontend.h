@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-bool frontend_init(void);
+bool frontend_init(const char *title);
 void frontend_close(void);
 void frontend_poll(void);
 void frontend_present(const uint8_t *framebuffer);

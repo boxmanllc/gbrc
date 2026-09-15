@@ -3,7 +3,6 @@
 #include <SDL.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #define SCALE 3
 #define WIN_W (160 * SCALE)
@@ -126,13 +125,13 @@ void frontend_present(const uint8_t *framebuffer) {
 
 bool frontend_should_quit(void) { return g_quit_req; }
 
-bool frontend_init(void) {
+bool frontend_init(const char *title) {
 	if (SDL_Init(SDL_INIT_VIDEO) != 0)
 		return false;
 
-	g_window = SDL_CreateWindow("gbrc - Game Boy", SDL_WINDOWPOS_CENTERED,
-	                            SDL_WINDOWPOS_CENTERED, WIN_W, WIN_H,
-	                            SDL_WINDOW_SHOWN);
+	g_window =
+	    SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+	                     WIN_W, WIN_H, SDL_WINDOW_SHOWN);
 	if (!g_window) {
 		SDL_Quit();
 		return false;
@@ -160,8 +159,6 @@ bool frontend_init(void) {
 	}
 
 	SDL_RaiseWindow(g_window);
-	fprintf(stderr, "Controls: WASD/arrows = D-pad, Z = A, X = B, Enter = "
-	                "Start, Backspace/Shift = Select, Esc = quit\n");
 
 	SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
 	SDL_RenderClear(g_renderer);
