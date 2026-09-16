@@ -6,29 +6,32 @@ static uint8_t if_reg;
 static uint8_t ie_reg;
 uint8_t IME;
 
-void interrupt_init() {
+void interrupt_init(void) {
 	if_reg = 0xE0;
 	ie_reg = 0;
 	IME = 0;
 }
 
-uint8_t if_read() { return if_reg | 0xE0; }
-uint8_t ie_read() { return ie_reg; }
+uint8_t if_read(void) { return if_reg | 0xE0; }
+uint8_t ie_read(void) { return ie_reg; }
 void if_write(uint8_t v) { if_reg = (v | 0xE0); }
 void ie_write(uint8_t v) { ie_reg = v; }
 
 void interrupt_request(Interrupt i) {
-	if (i >= INT_UNKNOWN)
+	if (i >= INT_UNKNOWN) {
 		return;
+	}
 	if_reg |= (uint8_t)(1u << i);
 }
 
 uint16_t interrupt_service(void) {
-	if (!IME)
+	if (!IME) {
 		return 0xFFFF;
+	}
 	uint8_t pending = if_reg & ie_reg & 0x1F;
-	if (!pending)
+	if (!pending) {
 		return 0xFFFF;
+	}
 
 	for (int i = 0; i < 5; ++i) {
 		if (pending & (1u << i)) {

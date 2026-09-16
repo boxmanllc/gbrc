@@ -1,11 +1,10 @@
-#include "apu.h"
+#include "hardware/apu.h"
 #include "gb.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
-#define CPU_HZ 4194304
-#define CYCLES_PER_SAMPLE (CPU_HZ / APU_SAMPLE_RATE)
+#define CYCLES_PER_SAMPLE (GB_CPU_HZ / APU_SAMPLE_RATE)
 #define FRAME_SEQ_PERIOD 8192
 #define FLUSH_SAMPLES 1024
 
@@ -101,63 +100,80 @@ static uint32_t noise_period(void) {
 }
 
 static int ch1_out(void) {
-	if (!apu.ch1.enabled || !apu.ch1.dac)
+	if (!apu.ch1.enabled || !apu.ch1.dac) {
 		return 0;
+	}
+
 	return DUTY[apu.ch1.duty][apu.ch1.duty_pos] ? apu.ch1.volume : 0;
 }
 
 static int ch2_out(void) {
-	if (!apu.ch2.enabled || !apu.ch2.dac)
+	if (!apu.ch2.enabled || !apu.ch2.dac) {
 		return 0;
+	}
+
 	return DUTY[apu.ch2.duty][apu.ch2.duty_pos] ? apu.ch2.volume : 0;
 }
 
 static int ch3_out(void) {
-	if (!apu.ch3.enabled || !apu.ch3.dac || apu.ch3.volume_code == 0)
+	if (!apu.ch3.enabled || !apu.ch3.dac || apu.ch3.volume_code == 0) {
 		return 0;
+	}
+
 	uint8_t byte = apu.wave_ram[apu.ch3.pos >> 1];
 	uint8_t sample = (apu.ch3.pos & 1) ? (byte & 0x0F) : (byte >> 4);
 	return sample >> (apu.ch3.volume_code - 1);
 }
 
 static int ch4_out(void) {
-	if (!apu.ch4.enabled || !apu.ch4.dac)
+	if (!apu.ch4.enabled || !apu.ch4.dac) {
 		return 0;
+	}
+
 	return (apu.ch4.lfsr & 1) ? 0 : apu.ch4.volume;
 }
 
 static void noise_step(void) {
 	uint16_t bit = (apu.ch4.lfsr ^ (apu.ch4.lfsr >> 1)) & 1;
 	apu.ch4.lfsr = (uint16_t)((apu.ch4.lfsr >> 1) | (bit << 14));
-	if (apu.ch4.width7)
+
+	if (apu.ch4.width7) {
 		apu.ch4.lfsr = (uint16_t)((apu.ch4.lfsr & ~(1u << 6)) | (bit << 6));
+	}
 }
 
 static void advance(uint32_t t) {
 	if (apu.ch1.enabled) {
 		apu.ch1.timer -= (int32_t)t;
+
 		while (apu.ch1.timer <= 0) {
 			apu.ch1.timer += 32 * (2048 - apu.ch1.freq);
 			apu.ch1.duty_pos = (uint8_t)((apu.ch1.duty_pos + 1) & 7);
 		}
 	}
+
 	if (apu.ch2.enabled) {
 		apu.ch2.timer -= (int32_t)t;
+
 		while (apu.ch2.timer <= 0) {
 			apu.ch2.timer += 32 * (2048 - apu.ch2.freq);
 			apu.ch2.duty_pos = (uint8_t)((apu.ch2.duty_pos + 1) & 7);
 		}
 	}
+
 	if (apu.ch3.enabled) {
 		apu.ch3.timer -= (int32_t)t;
+
 		while (apu.ch3.timer <= 0) {
 			apu.ch3.timer += 2 * (2048 - apu.ch3.freq);
 			apu.ch3.pos = (uint8_t)((apu.ch3.pos + 1) & 31);
 		}
 	}
+
 	if (apu.ch4.enabled) {
 		uint32_t p = noise_period();
 		apu.ch4.timer -= (int32_t)t;
+
 		while (apu.ch4.timer <= 0) {
 			apu.ch4.timer += (int32_t)p;
 			noise_step();
@@ -174,11 +190,15 @@ static void mix(int16_t *left, int16_t *right) {
 
 	int v[4] = {ch1_out(), ch2_out(), ch3_out(), ch4_out()};
 	int sl = 0, sr = 0;
+
 	for (int i = 0; i < 4; i++) {
-		if (apu.nr51 & (1 << i))
+		if (apu.nr51 & (1 << i)) {
 			sr += v[i];
-		if (apu.nr51 & (1 << (i + 4)))
+		}
+
+		if (apu.nr51 & (1 << (i + 4))) {
 			sl += v[i];
+		}
 	}
 
 	int vl = (apu.nr50 >> 4) & 7;
@@ -190,69 +210,98 @@ static void mix(int16_t *left, int16_t *right) {
 static void clock_length(void) {
 	if (apu.ch1.length_enable && apu.ch1.length > 0) {
 		apu.ch1.length--;
-		if (apu.ch1.length == 0)
+
+		if (apu.ch1.length == 0) {
 			apu.ch1.enabled = false;
+		}
 	}
+
 	if (apu.ch2.length_enable && apu.ch2.length > 0) {
 		apu.ch2.length--;
-		if (apu.ch2.length == 0)
+
+		if (apu.ch2.length == 0) {
 			apu.ch2.enabled = false;
+		}
 	}
+
 	if (apu.ch3.length_enable && apu.ch3.length > 0) {
 		apu.ch3.length--;
-		if (apu.ch3.length == 0)
+
+		if (apu.ch3.length == 0) {
 			apu.ch3.enabled = false;
+		}
 	}
+
 	if (apu.ch4.length_enable && apu.ch4.length > 0) {
 		apu.ch4.length--;
-		if (apu.ch4.length == 0)
+
+		if (apu.ch4.length == 0) {
 			apu.ch4.enabled = false;
+		}
 	}
 }
 
 static void clock_envelope(Square *sq) {
-	if (sq->env_period == 0)
+	if (sq->env_period == 0) {
 		return;
-	if (sq->env_timer > 0)
+	}
+
+	if (sq->env_timer > 0) {
 		sq->env_timer--;
-	if (sq->env_timer != 0)
+	}
+
+	if (sq->env_timer != 0) {
 		return;
+	}
 
 	sq->env_timer = sq->env_period;
+
 	if (sq->env_dir) {
-		if (sq->volume < 15)
+		if (sq->volume < 15) {
 			sq->volume++;
+		}
 	} else {
-		if (sq->volume > 0)
+		if (sq->volume > 0) {
 			sq->volume--;
+		}
 	}
 }
 
 static void clock_envelope_noise(void) {
-	if (apu.ch4.env_period == 0)
+	if (apu.ch4.env_period == 0) {
 		return;
-	if (apu.ch4.env_timer > 0)
+	}
+
+	if (apu.ch4.env_timer > 0) {
 		apu.ch4.env_timer--;
-	if (apu.ch4.env_timer != 0)
+	}
+
+	if (apu.ch4.env_timer != 0) {
 		return;
+	}
 
 	apu.ch4.env_timer = apu.ch4.env_period;
+
 	if (apu.ch4.env_dir) {
-		if (apu.ch4.volume < 15)
+		if (apu.ch4.volume < 15) {
 			apu.ch4.volume++;
+		}
 	} else {
-		if (apu.ch4.volume > 0)
+		if (apu.ch4.volume > 0) {
 			apu.ch4.volume--;
+		}
 	}
 }
 
 static void sweep_calc(void) {
 	uint16_t delta = apu.ch1.freq >> apu.sweep_shift;
 	uint16_t nf;
-	if (apu.sweep_dir)
+
+	if (apu.sweep_dir) {
 		nf = apu.ch1.freq - delta;
-	else
+	} else {
 		nf = apu.ch1.freq + delta;
+	}
 
 	if (nf > 2047) {
 		apu.ch1.enabled = false;
@@ -262,17 +311,21 @@ static void sweep_calc(void) {
 }
 
 static void clock_sweep(void) {
-	if (apu.sweep_timer > 0)
+	if (apu.sweep_timer > 0) {
 		apu.sweep_timer--;
-	if (apu.sweep_timer != 0)
+	}
+	if (apu.sweep_timer != 0) {
 		return;
+	}
 
 	apu.sweep_timer = apu.sweep_period ? apu.sweep_period : 8;
-	if (!apu.sweep_enabled || apu.sweep_period == 0)
+	if (!apu.sweep_enabled || apu.sweep_period == 0) {
 		return;
+	}
 
-	if (apu.sweep_shift != 0)
+	if (apu.sweep_shift != 0) {
 		sweep_calc();
+	}
 	sweep_calc();
 }
 
@@ -283,8 +336,9 @@ static void frame_step(void) {
 	case 4:
 	case 6:
 		clock_length();
-		if (apu.fs_step == 2 || apu.fs_step == 6)
+		if (apu.fs_step == 2 || apu.fs_step == 6) {
 			clock_sweep();
+		}
 		break;
 	case 7:
 		clock_envelope(&apu.ch1);
@@ -318,10 +372,12 @@ void apu_tick(void) {
 		uint32_t to_sample = CYCLES_PER_SAMPLE - apu.sample_acc;
 		uint32_t to_fs = FRAME_SEQ_PERIOD - apu.fs_acc;
 		uint32_t step = elapsed;
-		if (to_sample < step)
+		if (to_sample < step) {
 			step = to_sample;
-		if (to_fs < step)
+		}
+		if (to_fs < step) {
 			step = to_fs;
+		}
 
 		apu.sample_acc += step;
 		apu.fs_acc += step;
@@ -338,8 +394,9 @@ void apu_tick(void) {
 			buf[n++] = r;
 
 			if (n >= FLUSH_SAMPLES) {
-				if (apu_output)
+				if (apu_output) {
 					apu_output(buf, n);
+				}
 				n = 0;
 			}
 		}
@@ -350,27 +407,33 @@ void apu_tick(void) {
 		}
 	}
 
-	if (n != 0 && apu_output)
+	if (n != 0 && apu_output) {
 		apu_output(buf, n);
+	}
 }
 
 uint8_t apu_read(uint16_t addr) {
 	apu_tick();
 
-	if (addr >= 0xFF30 && addr <= 0xFF3F)
+	if (addr >= 0xFF30 && addr <= 0xFF3F) {
 		return apu.wave_ram[addr - 0xFF30];
+	}
 
 	if (addr == 0xFF26) {
 		uint8_t v = apu.enabled ? 0x80 : 0x00;
 		v |= 0x70;
-		if (apu.ch1.enabled)
+		if (apu.ch1.enabled) {
 			v |= 0x01;
-		if (apu.ch2.enabled)
+		}
+		if (apu.ch2.enabled) {
 			v |= 0x02;
-		if (apu.ch3.enabled)
+		}
+		if (apu.ch3.enabled) {
 			v |= 0x04;
-		if (apu.ch4.enabled)
+		}
+		if (apu.ch4.enabled) {
 			v |= 0x08;
+		}
 		return v;
 	}
 
@@ -413,8 +476,9 @@ uint8_t apu_read(uint16_t addr) {
 }
 
 static void trigger_square(Square *sq, bool sweep) {
-	if (sq->length == 0)
+	if (sq->length == 0) {
 		sq->length = 64;
+	}
 	sq->volume = sq->env_initial;
 	sq->env_timer = sq->env_period ? sq->env_period : 8;
 	sq->timer = 32 * (2048 - sq->freq);
@@ -424,22 +488,25 @@ static void trigger_square(Square *sq, bool sweep) {
 	if (sweep) {
 		apu.sweep_timer = apu.sweep_period ? apu.sweep_period : 8;
 		apu.sweep_enabled = apu.sweep_period != 0 || apu.sweep_shift != 0;
-		if (apu.sweep_shift != 0)
+		if (apu.sweep_shift != 0) {
 			sweep_calc();
+		}
 	}
 }
 
 static void trigger_wave(void) {
-	if (apu.ch3.length == 0)
+	if (apu.ch3.length == 0) {
 		apu.ch3.length = 256;
+	}
 	apu.ch3.timer = 2 * (2048 - apu.ch3.freq);
 	apu.ch3.pos = 0;
 	apu.ch3.enabled = apu.ch3.dac;
 }
 
 static void trigger_noise(void) {
-	if (apu.ch4.length == 0)
+	if (apu.ch4.length == 0) {
 		apu.ch4.length = 64;
+	}
 	apu.ch4.volume = apu.ch4.env_initial;
 	apu.ch4.env_timer = apu.ch4.env_period ? apu.ch4.env_period : 8;
 	apu.ch4.lfsr = 0x7FFF;
@@ -482,12 +549,14 @@ void apu_write(uint16_t addr, uint8_t val) {
 		return;
 	}
 
-	if (!apu.enabled)
+	if (!apu.enabled) {
 		return;
+	}
 
 	uint8_t i = (uint8_t)(addr - 0xFF10);
-	if (i >= 0x30)
+	if (i >= 0x30) {
 		return;
+	}
 	apu.regs[i] = val;
 
 	switch (addr) {
@@ -505,8 +574,9 @@ void apu_write(uint16_t addr, uint8_t val) {
 		apu.ch1.env_dir = (val & 0x08) != 0;
 		apu.ch1.env_period = val & 7;
 		apu.ch1.dac = (val & 0xF8) != 0;
-		if (!apu.ch1.dac)
+		if (!apu.ch1.dac) {
 			apu.ch1.enabled = false;
+		}
 		break;
 	case 0xFF13:
 		apu.ch1.freq = (uint16_t)((apu.ch1.freq & 0x700) | val);
@@ -514,8 +584,9 @@ void apu_write(uint16_t addr, uint8_t val) {
 	case 0xFF14:
 		apu.ch1.freq = (uint16_t)((apu.ch1.freq & 0xFF) | ((val & 7) << 8));
 		apu.ch1.length_enable = (val & 0x40) != 0;
-		if (val & 0x80)
+		if (val & 0x80) {
 			trigger_square(&apu.ch1, true);
+		}
 		break;
 	case 0xFF16:
 		apu.ch2.duty = val >> 6;
@@ -526,8 +597,9 @@ void apu_write(uint16_t addr, uint8_t val) {
 		apu.ch2.env_dir = (val & 0x08) != 0;
 		apu.ch2.env_period = val & 7;
 		apu.ch2.dac = (val & 0xF8) != 0;
-		if (!apu.ch2.dac)
+		if (!apu.ch2.dac) {
 			apu.ch2.enabled = false;
+		}
 		break;
 	case 0xFF18:
 		apu.ch2.freq = (uint16_t)((apu.ch2.freq & 0x700) | val);
@@ -535,13 +607,15 @@ void apu_write(uint16_t addr, uint8_t val) {
 	case 0xFF19:
 		apu.ch2.freq = (uint16_t)((apu.ch2.freq & 0xFF) | ((val & 7) << 8));
 		apu.ch2.length_enable = (val & 0x40) != 0;
-		if (val & 0x80)
+		if (val & 0x80) {
 			trigger_square(&apu.ch2, false);
+		}
 		break;
 	case 0xFF1A:
 		apu.ch3.dac = (val & 0x80) != 0;
-		if (!apu.ch3.dac)
+		if (!apu.ch3.dac) {
 			apu.ch3.enabled = false;
+		}
 		break;
 	case 0xFF1B:
 		apu.ch3.length = (uint16_t)(256 - val);
@@ -555,8 +629,9 @@ void apu_write(uint16_t addr, uint8_t val) {
 	case 0xFF1E:
 		apu.ch3.freq = (uint16_t)((apu.ch3.freq & 0xFF) | ((val & 7) << 8));
 		apu.ch3.length_enable = (val & 0x40) != 0;
-		if (val & 0x80)
+		if (val & 0x80) {
 			trigger_wave();
+		}
 		break;
 	case 0xFF20:
 		apu.ch4.length = (uint16_t)(64 - (val & 0x3F));
@@ -566,8 +641,9 @@ void apu_write(uint16_t addr, uint8_t val) {
 		apu.ch4.env_dir = (val & 0x08) != 0;
 		apu.ch4.env_period = val & 7;
 		apu.ch4.dac = (val & 0xF8) != 0;
-		if (!apu.ch4.dac)
+		if (!apu.ch4.dac) {
 			apu.ch4.enabled = false;
+		}
 		break;
 	case 0xFF22:
 		apu.ch4.shift = val >> 4;
@@ -576,8 +652,9 @@ void apu_write(uint16_t addr, uint8_t val) {
 		break;
 	case 0xFF23:
 		apu.ch4.length_enable = (val & 0x40) != 0;
-		if (val & 0x80)
+		if (val & 0x80) {
 			trigger_noise();
+		}
 		break;
 	case 0xFF24:
 		apu.nr50 = val;

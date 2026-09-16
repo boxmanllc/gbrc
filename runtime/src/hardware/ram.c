@@ -1,15 +1,16 @@
-#include "ram.h"
-#include "apu.h"
+#include "hardware/ram.h"
 #include "gb.h"
+#include "hardware/apu.h"
+#include "hardware/joypad.h"
+#include "hardware/ppu.h"
+#include "hardware/timer.h"
 #include "interrupt.h"
-#include "joypad.h"
-#include "ppu.h"
-#include "timer.h"
 #include <stdint.h>
 
 uint8_t read_ram(uint16_t addr) {
-	if (addr >= 0xFF10 && addr <= 0xFF3F)
+	if (addr >= 0xFF10 && addr <= 0xFF3F) {
 		return apu_read(addr);
+	}
 
 	switch (addr) {
 	case 0xFF00:
@@ -37,8 +38,9 @@ uint8_t read_ram(uint16_t addr) {
 	case 0xFFFF:
 		return ie_read();
 	default:
-		if (addr >= 0xE000 && addr <= 0xFDFF)
+		if (addr >= 0xE000 && addr <= 0xFDFF) {
 			addr = (uint16_t)(addr - 0x2000);
+		}
 		return ram[addr];
 	}
 }
@@ -80,10 +82,12 @@ void write_ram(uint16_t addr, uint8_t val) {
 		ie_write(val);
 		return;
 	default:
-		if (addr < 0x8000)
+		if (addr < 0x8000) {
 			return;
-		if (addr >= 0xE000 && addr <= 0xFDFF)
+		}
+		if (addr >= 0xE000 && addr <= 0xFDFF) {
 			addr = (uint16_t)(addr - 0x2000);
+		}
 		ram[addr] = val;
 	}
 }

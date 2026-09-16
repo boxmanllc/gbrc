@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define GB_CPU_HZ 4194304
+#define GB_CYCLES_PER_FRAME 17556
+
 extern uint8_t ram[0x10000];
 extern uint32_t cycles;
 
@@ -26,8 +29,9 @@ extern uint16_t sp;
 extern uint16_t block_starts[];
 extern uint32_t g_budget;
 
-extern uint32_t rom_main();
+extern uint32_t rom_main(void);
 
-void gb_init();
+void rom_init(void);
+void gb_init(void);
 
 #endif

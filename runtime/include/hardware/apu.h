@@ -1,5 +1,6 @@
 #ifndef GB_APU_H
 #define GB_APU_H
+
 #include <stdint.h>
 
 #define APU_SAMPLE_RATE 44100

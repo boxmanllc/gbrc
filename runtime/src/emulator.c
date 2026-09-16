@@ -1,8 +1,8 @@
-#include "interp.h"
+#include "emulator.h"
 #include "gb.h"
+#include "hardware/ram.h"
 #include "interrupt.h"
 #include "profile.h"
-#include "ram.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -24,14 +24,18 @@ static void set_hl(uint16_t v) {
 }
 static uint16_t get_af(void) {
 	uint8_t f = 0;
-	if (z_flag)
+	if (z_flag) {
 		f |= 0x80;
-	if (n_flag)
+	}
+	if (n_flag) {
 		f |= 0x40;
-	if (h_flag)
+	}
+	if (h_flag) {
 		f |= 0x20;
-	if (c_flag)
+	}
+	if (c_flag) {
 		f |= 0x10;
+	}
 	return (uint16_t)a_reg << 8 | f;
 }
 static void set_af(uint16_t v) {
@@ -112,20 +116,23 @@ static bool is_block_start(uint16_t target) {
 	static size_t n;
 	static bool counted;
 	if (!counted) {
-		while (block_starts[n] != 0xFFFF)
+		while (block_starts[n] != 0xFFFF) {
 			n++;
+		}
 		counted = true;
 	}
 	size_t lo = 0, hi = n;
 	while (lo < hi) {
 		size_t mid = lo + (hi - lo) / 2;
 		uint16_t v = block_starts[mid];
-		if (v == target)
+		if (v == target) {
 			return true;
-		if (v < target)
+		}
+		if (v < target) {
 			lo = mid + 1;
-		else
+		} else {
 			hi = mid;
+		}
 	}
 	return false;
 }
@@ -223,13 +230,16 @@ static void daa(void) {
 			a_reg += 0x60;
 			c_flag = true;
 		}
-		if (h_flag || (a_reg & 0x0F) > 0x09)
+		if (h_flag || (a_reg & 0x0F) > 0x09) {
 			a_reg += 0x06;
+		}
 	} else {
-		if (c_flag)
+		if (c_flag) {
 			a_reg -= 0x60;
-		if (h_flag)
+		}
+		if (h_flag) {
 			a_reg -= 0x06;
+		}
 	}
 	z_flag = a_reg == 0;
 	h_flag = false;
@@ -307,10 +317,11 @@ static void cb_exec(uint16_t addr) {
 	uint8_t reg = cb & 0x07;
 	uint8_t group = cb >> 3;
 
-	if (reg == 6)
+	if (reg == 6) {
 		cycles += 4;
-	else
+	} else {
 		cycles += 2;
+	}
 
 	if (group < 8) {
 		uint8_t v = reg == 6 ? read_ram(get_hl()) : get_reg8(cb);
@@ -341,10 +352,11 @@ static void cb_exec(uint16_t addr) {
 			nv = cb_srl(v);
 			break;
 		}
-		if (reg == 6)
+		if (reg == 6) {
 			write_ram(get_hl(), nv);
-		else
+		} else {
 			set_reg8(cb, nv);
+		}
 	} else if (group < 16) {
 		uint8_t bit = group - 8;
 		uint8_t v = reg == 6 ? read_ram(get_hl()) : get_reg8(cb);
@@ -352,16 +364,15 @@ static void cb_exec(uint16_t addr) {
 		n_flag = false;
 		h_flag = true;
 	} else {
-		uint8_t bit = group - 16;
-		if (group >= 24)
-			bit = group - 24;
+		uint8_t bit = group & 7;
 		uint8_t v = reg == 6 ? read_ram(get_hl()) : get_reg8(cb);
-		uint8_t nv =
-		    group < 24 ? (uint8_t)(v & ~(1 << bit)) : (uint8_t)(v | (1 << bit));
-		if (reg == 6)
+		uint8_t nv = (group < 24) ? (uint8_t)(v & ~(1u << bit))
+		                          : (uint8_t)(v | (1u << bit));
+		if (reg == 6) {
 			write_ram(get_hl(), nv);
-		else
+		} else {
 			set_reg8(cb, nv);
+		}
 	}
 }
 
@@ -371,23 +382,25 @@ uint16_t interp_run(uint16_t start_pc) {
 	profile_record(start_pc);
 
 	for (;;) {
-		if (is_block_start(p))
+		if (is_block_start(p)) {
 			return p;
-		if (cycles >= g_budget)
+		}
+		if (cycles >= g_budget) {
 			return p;
+		}
 
 		if (IME) {
 			pc = p;
 			uint16_t vec = interrupt_service();
-			if (vec != 0xFFFF)
+			if (vec != 0xFFFF) {
 				p = vec;
+			}
 		}
 
 		uint8_t op = ram[p];
 		p++;
 
 		switch (op) {
-
 		case 0x00:
 			cycles += 1;
 			break;

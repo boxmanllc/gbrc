@@ -9,7 +9,7 @@ SDL_LIBS = "$(pkg-config --libs sdl2)"
 cmd = "clang -c $BUILD_PATH/game.ll -o $BUILD_PATH/$OUT"
 
 [build]
-cmd = "clang -Iinclude $SDL_FLAGS ./src/*.c $BUILD_PATH/$OUT $SDL_LIBS -o $BUILD_PATH/$GAME"
+cmd = "clang -Iinclude $SDL_FLAGS ./src/*.c ./src/hardware/*.c $BUILD_PATH/$OUT $SDL_LIBS -o $BUILD_PATH/$GAME"
 
 [custom.run]
 cmd = "$BUILD_PATH/$GAME"

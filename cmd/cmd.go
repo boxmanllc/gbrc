@@ -22,6 +22,7 @@ var (
 	romFilePath, outDir   string
 	profileFilePath       string
 	toOptimize, toCompile bool
+	optimizeSize          bool
 )
 
 func Run(runtimeFS fs.FS) {
@@ -67,7 +68,13 @@ func Run(runtimeFS fs.FS) {
 
 	if toOptimize {
 		requireTool("opt")
-		optCmd := exec.Command("opt", "-O2", "-S", irPath, "-o", irPath)
+
+		level := "-O2"
+		if optimizeSize {
+			level = "-Oz"
+		}
+
+		optCmd := exec.Command("opt", level, "-S", irPath, "-o", irPath)
 		optCmd.Stderr = os.Stderr
 		if err := optCmd.Run(); err != nil {
 			log.Fatalf("failed to optimize ir: %s", err)
@@ -93,6 +100,7 @@ func parseFlags() {
 	flag.StringVar(&profileFilePath, "profile", "", "seed block discovery from a profile of interpreted entry points")
 	noOptFlag := flag.Bool("no-optimize", false, "skip llvm ir optimization")
 	noCompileFlag := flag.Bool("no-compile", false, "emit llvm ir only")
+	sizeFlag := flag.Bool("size", false, "optimize the binary for size instead of speed")
 	flag.Parse()
 
 	if romFilePath == "" {
@@ -110,6 +118,7 @@ func parseFlags() {
 
 	toOptimize = !*noOptFlag
 	toCompile = !*noCompileFlag
+	optimizeSize = *sizeFlag
 }
 
 func usage() {
@@ -167,9 +176,9 @@ func compile(runtimeFS fs.FS, irPath, outPath string) error {
 	requireTool("pkg-config")
 
 	runtimeInclude := filepath.Join(runtimeDir, "include")
-	runtimeSources, err := filepath.Glob(filepath.Join(runtimeDir, "src", "*.c"))
-	if err != nil || len(runtimeSources) == 0 {
-		return fmt.Errorf("failed to locate runtime sources: %w", err)
+	runtimeSources, err := collectSources(filepath.Join(runtimeDir, "src"))
+	if err != nil {
+		return err
 	}
 
 	sdlCFlags, err := exec.Command("pkg-config", "--cflags", "sdl2").Output()
@@ -182,12 +191,32 @@ func compile(runtimeFS fs.FS, irPath, outPath string) error {
 		return fmt.Errorf("sdl2 not found")
 	}
 
-	args := []string{"-O0", "-g", "-I" + runtimeInclude}
+	optLevel := "-O2"
+	if optimizeSize {
+		optLevel = "-Oz"
+	}
+
+	args := []string{
+		optLevel,
+		"-ffunction-sections",
+		"-fdata-sections",
+		"-fno-asynchronous-unwind-tables",
+		"-fno-unwind-tables",
+		"-fno-stack-protector",
+		"-I" + runtimeInclude,
+	}
 	args = append(args, strings.Fields(string(sdlCFlags))...)
 	args = append(args, irPath)
 	args = append(args, runtimeSources...)
 	args = append(args, strings.Fields(string(sdlLibs))...)
-	args = append(args, "-o", outPath)
+	args = append(args,
+		"-Wl,--gc-sections",
+		"-Wl,--build-id=none",
+		"-Wl,-O1",
+		"-Wl,-z,noseparate-code",
+		"-s",
+		"-o", outPath,
+	)
 
 	compileCmd := exec.Command("clang", args...)
 	compileCmd.Stderr = os.Stderr
@@ -196,6 +225,31 @@ func compile(runtimeFS fs.FS, irPath, outPath string) error {
 	}
 
 	return nil
+}
+
+func collectSources(root string) ([]string, error) {
+	var sources []string
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !d.IsDir() && filepath.Ext(path) == ".c" {
+			sources = append(sources, path)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("failed to locate runtime sources in %s", root)
+	}
+
+	return sources, nil
 }
 
 func extractRuntime(runtimeFS fs.FS) (string, func(), error) {

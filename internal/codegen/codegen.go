@@ -24,6 +24,8 @@ type Codegen struct {
 	retDispatchBlock *ir.Block
 
 	ram                                      *ir.Global
+	romImage                                 *ir.Global
+	romSize                                  int
 	cycles                                   *ir.Global
 	aReg, bReg, cReg, dReg, eReg, hReg, lReg *ir.Global
 	zFlag, nFlag, hFlag, cFlag               *ir.Global
@@ -54,6 +56,7 @@ func New(blocks []*analyzer.Block, romBytes []byte) (*Codegen, error) {
 	cg.main = cg.module.NewFunc("rom_main", types.I32)
 
 	cg.emitGlobals(romBytes)
+	cg.emitRomInit()
 
 	bootEntry := cg.main.NewBlock("boot_entry")
 
@@ -87,9 +90,16 @@ func (cg *Codegen) WriteTo(filepath string) error {
 }
 
 func (cg *Codegen) emitGlobals(romBytes []byte) {
-	image := make([]byte, 0x10000)
-	copy(image, romBytes)
-	cg.ram = cg.module.NewGlobalDef("ram", constant.NewCharArray(image))
+	if len(romBytes) > 0x10000 {
+		romBytes = romBytes[:0x10000]
+	}
+
+	cg.ram = cg.module.NewGlobalDef("ram", constant.NewZeroInitializer(types.NewArray(0x10000, types.I8)))
+
+	cg.romImage = cg.module.NewGlobalDef("rom_image", constant.NewCharArray(romBytes))
+	cg.romImage.Linkage = enum.LinkageInternal
+	cg.romSize = len(romBytes)
+
 	cg.cycles = cg.module.NewGlobalDef("cycles", constant.NewInt(types.I32, 0))
 
 	cg.aReg = cg.module.NewGlobalDef("a_reg", constant.NewInt(types.I8, 0))
@@ -118,6 +128,31 @@ func (cg *Codegen) emitGlobals(romBytes []byte) {
 	cg.writeRam = cg.module.NewFunc("write_ram", types.Void, ir.NewParam("addr", types.I16), ir.NewParam("val", types.I8))
 
 	cg.setupReadMemFunc()
+}
+
+func (cg *Codegen) emitRomInit() {
+	fn := cg.module.NewFunc("rom_init", types.Void)
+	entry := fn.NewBlock("entry")
+	loop := fn.NewBlock("copy")
+	end := fn.NewBlock("done")
+
+	nonzero := entry.NewICmp(enum.IPredNE,
+		constant.NewInt(types.I64, int64(cg.romSize)),
+		constant.NewInt(types.I64, 0))
+	entry.NewCondBr(nonzero, loop, end)
+
+	i := loop.NewPhi(ir.NewIncoming(constant.NewInt(types.I64, 0), entry))
+	src := loop.NewGetElementPtr(types.I8, loop.NewBitCast(cg.romImage, types.NewPointer(types.I8)), i)
+	val := loop.NewLoad(types.I8, src)
+	dst := loop.NewGetElementPtr(types.I8, loop.NewBitCast(cg.ram, types.NewPointer(types.I8)), i)
+	loop.NewStore(val, dst)
+
+	next := loop.NewAdd(i, constant.NewInt(types.I64, 1))
+	i.Incs = append(i.Incs, ir.NewIncoming(next, loop))
+	more := loop.NewICmp(enum.IPredULT, next, constant.NewInt(types.I64, int64(cg.romSize)))
+	loop.NewCondBr(more, loop, end)
+
+	end.NewRet(nil)
 }
 
 func (cg *Codegen) setupReadMemFunc() {

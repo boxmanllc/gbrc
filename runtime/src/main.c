@@ -1,16 +1,12 @@
-#include "apu.h"
 #include "frontend.h"
 #include "gb.h"
-#include "interrupt.h"
-#include "joypad.h"
-#include "ppu.h"
+#include "hardware/apu.h"
+#include "hardware/ppu.h"
+#include "hardware/timer.h"
 #include "profile.h"
-#include "timer.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-
-#define CYCLES_PER_FRAME 17556
 
 static const char *mbc_type_name(uint8_t t) {
 	switch (t) {
@@ -50,13 +46,16 @@ static void rom_title(char *out, size_t n) {
 	size_t j = 0;
 	for (size_t i = 0; i < 16 && j + 1 < n; i++) {
 		uint8_t c = ram[0x0134 + i];
-		if (c == 0)
+		if (c == 0) {
 			break;
-		if (c >= 0x20 && c < 0x7F)
+		}
+		if (c >= 0x20 && c < 0x7F) {
 			out[j++] = (char)c;
+		}
 	}
-	while (j > 0 && out[j - 1] == ' ')
+	while (j > 0 && out[j - 1] == ' ') {
 		j--;
+	}
 	out[j] = '\0';
 }
 
@@ -65,8 +64,9 @@ static void print_rom_info(void) {
 	rom_title(title, sizeof(title));
 
 	int rom_size_byte = ram[0x0148];
-	if (rom_size_byte > 8)
+	if (rom_size_byte > 8) {
 		rom_size_byte = 8;
+	}
 
 	printf("ROM Information:\n");
 	printf("  Title: %s\n", title);
@@ -79,30 +79,30 @@ static void print_rom_info(void) {
 	printf("  ROM Version: %d\n", ram[0x014C]);
 }
 
-void gb_init() {
-	interrupt_init();
-	timer_init();
-	joypad_init();
-	ppu_init();
-	apu_init();
-}
-
 static const char *parse_profile_flag(int argc, char **argv) {
 	for (int i = 1; i < argc; i++) {
 		if ((strcmp(argv[i], "--profile") == 0 ||
 		     strcmp(argv[i], "-profile") == 0) &&
-		    i + 1 < argc)
+		    i + 1 < argc) {
 			return argv[i + 1];
-		if (strncmp(argv[i], "--profile=", 10) == 0)
+		}
+
+		if (strncmp(argv[i], "--profile=", 10) == 0) {
 			return argv[i] + 10;
-		if (strncmp(argv[i], "-profile=", 9) == 0)
+		}
+
+		if (strncmp(argv[i], "-profile=", 9) == 0) {
 			return argv[i] + 9;
+		}
 	}
+
 	return NULL;
 }
 
 int main(int argc, char **argv) {
 	const char *profilePath = parse_profile_flag(argc, argv);
+
+	rom_init();
 
 	print_rom_info();
 	printf("Controls: WASD/arrows = D-pad, Z = A, X = B, Enter = Start, "
@@ -110,8 +110,9 @@ int main(int argc, char **argv) {
 
 	char title[32];
 	rom_title(title, sizeof(title));
-	if (title[0] == '\0')
-		snprintf(title, sizeof(title), "gbrc - Game Boy");
+	if (title[0] == '\0') {
+		snprintf(title, sizeof(title), "gbrc");
+	}
 
 	if (!frontend_init(title)) {
 		fprintf(stderr, "failed to initialize frontend\n");
@@ -122,23 +123,25 @@ int main(int argc, char **argv) {
 	apu_output = frontend_present_audio;
 	gb_init();
 
-	g_budget = CYCLES_PER_FRAME;
+	g_budget = GB_CYCLES_PER_FRAME;
 	unsigned long frame = 0;
 	for (;;) {
 		frontend_poll();
-		if (frontend_should_quit())
+		if (frontend_should_quit()) {
 			break;
+		}
 
 		rom_main();
 		ppu_tick();
 		timer_tick();
 		apu_tick();
-		g_budget = cycles + CYCLES_PER_FRAME;
+		g_budget = cycles + GB_CYCLES_PER_FRAME;
 		frontend_wait_frame();
 
 		frame++;
-		if (profilePath && frame % 60 == 0)
+		if (profilePath && frame % 60 == 0) {
 			profile_dump(profilePath);
+		}
 	}
 
 	profile_dump(profilePath);

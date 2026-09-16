@@ -1,5 +1,6 @@
 #ifndef GB_INTERRUPT_H
 #define GB_INTERRUPT_H
+
 #include <stdint.h>
 
 typedef enum {
@@ -13,14 +14,14 @@ typedef enum {
 
 extern uint8_t IME;
 
-void interrupt_init();
+void interrupt_init(void);
 
-uint8_t if_read();
-uint8_t ie_read();
+uint8_t if_read(void);
+uint8_t ie_read(void);
 void if_write(uint8_t v);
 void ie_write(uint8_t v);
 
 void interrupt_request(Interrupt i);
-uint16_t interrupt_service();
+uint16_t interrupt_service(void);
 
 #endif

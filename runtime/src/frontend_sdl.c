@@ -1,13 +1,15 @@
-#include "apu.h"
 #include "frontend.h"
-#include "joypad.h"
+#include "gb.h"
+#include "hardware/apu.h"
+#include "hardware/joypad.h"
+#include "hardware/ppu.h"
 #include <SDL.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #define SCALE 3
-#define WIN_W (160 * SCALE)
-#define WIN_H (144 * SCALE)
+#define WIN_W (GB_LCD_WIDTH * SCALE)
+#define WIN_H (GB_LCD_HEIGHT * SCALE)
 
 static const uint8_t PALETTE[4][3] = {
     {0xE0, 0xF8, 0xD0},
@@ -25,8 +27,9 @@ static bool g_quit_req;
 static void set_button(Button b, bool down) { joypad_press(b, down); }
 
 static void release_all_buttons(void) {
-	for (int b = 0; b < 8; b++)
+	for (int b = 0; b < 8; b++) {
 		joypad_press((Button)b, false);
+	}
 }
 
 static void key_event(bool down, SDL_Scancode sc) {
@@ -63,8 +66,9 @@ static void key_event(bool down, SDL_Scancode sc) {
 		set_button(SELECT, down);
 		break;
 	case SDL_SCANCODE_ESCAPE:
-		if (down)
+		if (down) {
 			g_quit_req = true;
+		}
 		break;
 	default:
 		break;
@@ -79,15 +83,17 @@ static void pump_events(void) {
 			g_quit_req = true;
 			break;
 		case SDL_KEYDOWN:
-			if (ev.key.repeat == 0)
+			if (ev.key.repeat == 0) {
 				key_event(true, ev.key.keysym.scancode);
+			}
 			break;
 		case SDL_KEYUP:
 			key_event(false, ev.key.keysym.scancode);
 			break;
 		case SDL_WINDOWEVENT:
-			if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+			if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
 				release_all_buttons();
+			}
 			break;
 		default:
 			break;
@@ -98,18 +104,20 @@ static void pump_events(void) {
 void frontend_poll(void) { pump_events(); }
 
 void frontend_present(const uint8_t *framebuffer) {
-	if (!g_tex)
+	if (!g_tex) {
 		return;
+	}
 
 	void *pixels;
 	int pitch;
-	if (SDL_LockTexture(g_tex, NULL, &pixels, &pitch) != 0)
+	if (SDL_LockTexture(g_tex, NULL, &pixels, &pitch) != 0) {
 		return;
+	}
 
 	uint8_t *dst = (uint8_t *)pixels;
-	for (int y = 0; y < 144; y++) {
-		for (int x = 0; x < 160; x++) {
-			const uint8_t *c = PALETTE[framebuffer[y * 160 + x] & 3];
+	for (int y = 0; y < GB_LCD_HEIGHT; y++) {
+		for (int x = 0; x < GB_LCD_WIDTH; x++) {
+			const uint8_t *c = PALETTE[framebuffer[y * GB_LCD_WIDTH + x] & 3];
 			uint8_t *out = &dst[y * pitch + x * 4];
 			out[0] = c[0];
 			out[1] = c[1];
@@ -128,19 +136,24 @@ void frontend_present(const uint8_t *framebuffer) {
 bool frontend_should_quit(void) { return g_quit_req; }
 
 void frontend_present_audio(const int16_t *samples, int count) {
-	if (!g_audio || count <= 0)
+	if (!g_audio || count <= 0) {
 		return;
+	}
 
 	Uint32 queued = SDL_GetQueuedAudioSize(g_audio);
-	if (queued > (Uint32)(APU_SAMPLE_RATE * 2 * (int)sizeof(int16_t) / 4))
+	if (queued > (Uint32)(APU_SAMPLE_RATE * 2 * (int)sizeof(int16_t) / 4)) {
 		return;
+	}
 
 	SDL_QueueAudio(g_audio, samples, (Uint32)(count * sizeof(int16_t)));
 }
 
 bool frontend_init(const char *title) {
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0)
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
 		return false;
+	}
+
+	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 
 	SDL_AudioSpec want, have;
 	SDL_zero(want);
@@ -150,8 +163,9 @@ bool frontend_init(const char *title) {
 	want.samples = 1024;
 	want.callback = NULL;
 	g_audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-	if (g_audio)
+	if (g_audio) {
 		SDL_PauseAudioDevice(g_audio, 0);
+	}
 
 	g_window =
 	    SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -161,9 +175,7 @@ bool frontend_init(const char *title) {
 		return false;
 	}
 
-	g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED);
-	if (!g_renderer)
-		g_renderer = SDL_CreateRenderer(g_window, -1, 0);
+	g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_PRESENTVSYNC);
 	if (!g_renderer) {
 		SDL_DestroyWindow(g_window);
 		g_window = NULL;
@@ -172,7 +184,8 @@ bool frontend_init(const char *title) {
 	}
 
 	g_tex = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ABGR8888,
-	                          SDL_TEXTUREACCESS_STREAMING, 160, 144);
+	                          SDL_TEXTUREACCESS_STREAMING, GB_LCD_WIDTH,
+	                          GB_LCD_HEIGHT);
 	if (!g_tex) {
 		SDL_DestroyRenderer(g_renderer);
 		SDL_DestroyWindow(g_window);
@@ -192,14 +205,18 @@ bool frontend_init(const char *title) {
 }
 
 void frontend_close(void) {
-	if (g_audio)
+	if (g_audio) {
 		SDL_CloseAudioDevice(g_audio);
-	if (g_tex)
+	}
+	if (g_tex) {
 		SDL_DestroyTexture(g_tex);
-	if (g_renderer)
+	}
+	if (g_renderer) {
 		SDL_DestroyRenderer(g_renderer);
-	if (g_window)
+	}
+	if (g_window) {
 		SDL_DestroyWindow(g_window);
+	}
 	SDL_Quit();
 	g_audio = 0;
 	g_tex = NULL;
@@ -208,13 +225,27 @@ void frontend_close(void) {
 }
 
 void frontend_wait_frame(void) {
-	static uint32_t next = 0;
-	uint32_t now = SDL_GetTicks();
-	if (next == 0)
-		next = now;
-	if (now < next) {
-		SDL_Delay(next - now);
-		now = next;
+	static uint64_t next = 0;
+	static uint64_t freq = 0;
+	if (freq == 0) {
+		freq = SDL_GetPerformanceFrequency();
+		next = SDL_GetPerformanceCounter();
 	}
-	next = now + 16;
+
+	uint64_t period = freq * GB_CYCLES_PER_FRAME * 4 / GB_CPU_HZ;
+	uint64_t now = SDL_GetPerformanceCounter();
+
+	if (now > next + 2 * period) {
+		next = now;
+	}
+	next += period;
+
+	if (now < next) {
+		uint64_t us = (next - now) * 1000000ULL / freq;
+		if (us > 1500) {
+			SDL_Delay((uint32_t)((us - 1500) / 1000));
+		}
+		while (SDL_GetPerformanceCounter() < next)
+			;
+	}
 }
