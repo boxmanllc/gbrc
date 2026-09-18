@@ -18,7 +18,7 @@
     columns: 2,
     column-gutter: 8pt,
     align: horizon,
-    text(13pt)[*Team Gloog*], image("gloog.png", height: 1.5em),
+    text(13pt)[*Team Gloog*], image("./assets/gloog.png", height: 1.5em),
   )
 ]
 #align(center, text(11pt)[#full-date])
@@ -30,7 +30,7 @@ Building software-based emulators has always been an interesting exercise for re
 Earlier this year, one of us got nerd-snipped into emulation development (commonly referred to as "emudev") by this site called #link("http://visual6502.org/JSSim/index.html")[Visual 6502], which is a browser-based transistor-level 6502 emulator. From then on, we have built a couple of small-scale emulators for old 2D-based retro game systems like #link("https://en.wikipedia.org/wiki/CHIP-8")[CHIP-8] and #link("https://en.wikipedia.org/wiki/Nintendo_Entertainment_System")[NES].
 
 #figure(
-  image("tiny.nes.png", width: 40%),
+  image("./assets/tiny.nes.png", width: 40%),
   caption: [#link("https://en.wikipedia.org/wiki/Balloon_Fight")[Balloon Fight] running on #link("https://github.com/0xmukesh/tiny.nes")[tiny.nes]],
 )
 
