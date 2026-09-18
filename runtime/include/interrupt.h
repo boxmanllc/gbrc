@@ -12,8 +12,6 @@ typedef enum {
 	INT_UNKNOWN = 5,
 } Interrupt;
 
-extern uint8_t IME;
-
 void interrupt_init(void);
 
 uint8_t if_read(void);

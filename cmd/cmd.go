@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,119 +19,144 @@ import (
 	"github.com/boxmanllc/gbrc/internal/rom"
 )
 
-var (
-	romFilePath, outDir   string
-	profileFilePath       string
-	toOptimize, toCompile bool
-	optimizeSize          bool
-)
-
-func Run(runtimeFS fs.FS) {
-	parseFlags()
-
-	romFile, err := rom.Parse(romFilePath)
-	if err != nil {
-		log.Fatalf("failed to parse rom file: %s", err)
-	}
-
-	decoder := decoder.New(romFile)
-	analyzer := analyzer.New(decoder)
-
-	if profileFilePath != "" {
-		seeds, err := readSeeds(profileFilePath)
-		if err != nil {
-			log.Fatalf("failed to read profile: %s", err)
-		}
-
-		analyzer.ExtraSeeds = seeds
-		log.Printf("profile: %d extra seed(s) from %s", len(seeds), profileFilePath)
-	}
-
-	blocks := analyzer.AnalyzeBlocks()
-	log.Printf("discovered %d basic block(s)", len(blocks))
-
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		log.Fatalf("failed to create output directory: %s", err)
-	}
-
-	name := romBaseName(romFilePath)
-	irPath := filepath.Join(outDir, name+".ll")
-	binPath := filepath.Join(outDir, name)
-
-	cg, err := codegen.New(blocks, romFile.Bytes())
-	if err != nil {
-		log.Fatalf("failed to generate ir: %s", err)
-	}
-
-	if err := cg.WriteTo(irPath); err != nil {
-		log.Fatalf("failed to write ir: %s", err)
-	}
-
-	if toOptimize {
-		requireTool("opt")
-
-		level := "-O2"
-		if optimizeSize {
-			level = "-Oz"
-		}
-
-		optCmd := exec.Command("opt", level, "-S", irPath, "-o", irPath)
-		optCmd.Stderr = os.Stderr
-		if err := optCmd.Run(); err != nil {
-			log.Fatalf("failed to optimize ir: %s", err)
-		}
-	}
-
-	log.Printf("wrote %s", irPath)
-
-	if toCompile {
-		if err := compile(runtimeFS, irPath, binPath); err != nil {
-			log.Fatalf("%s", err)
-		}
-
-		log.Printf("wrote %s", binPath)
-	}
+type options struct {
+	romPath  string
+	outDir   string
+	profile  string
+	frontend string
+	target   string
+	onlyIR   bool
+	saveIR   bool
 }
 
-func parseFlags() {
-	flag.Usage = usage
+type toolchain struct {
+	cc     string
+	flags  []string
+	libs   []string
+	link   []string
+	outExt string
+}
 
-	flag.StringVar(&romFilePath, "rom", "", "path to the gameboy rom")
-	flag.StringVar(&outDir, "out", "", "output directory for the llvm ir and binary (default: directory of the rom)")
-	flag.StringVar(&profileFilePath, "profile", "", "seed block discovery from a profile of interpreted entry points")
-	noOptFlag := flag.Bool("no-optimize", false, "skip llvm ir optimization")
-	noCompileFlag := flag.Bool("no-compile", false, "emit llvm ir only")
-	sizeFlag := flag.Bool("size", false, "optimize the binary for size instead of speed")
+var compileFlags = []string{
+	"-O2",
+	"-ffunction-sections",
+	"-fdata-sections",
+	"-fno-asynchronous-unwind-tables",
+	"-fno-unwind-tables",
+	"-fno-stack-protector",
+}
+
+func Run(runtimeFS fs.FS) {
+	opt := parseFlags()
+
+	romFile, err := rom.Parse(opt.romPath)
+	must(err, "parse rom")
+
+	an := analyzer.New(decoder.New(romFile))
+	if opt.profile != "" {
+		seeds, err := readSeeds(opt.profile)
+		must(err, "read profile")
+
+		an.ExtraSeeds = seeds
+		log.Printf("profile: %d extra seed(s) from %s", len(seeds), opt.profile)
+	}
+
+	blocks := an.AnalyzeBlocks()
+	log.Printf("discovered %d basic block(s)", len(blocks))
+
+	must(os.MkdirAll(opt.outDir, 0o755), "create output directory")
+
+	work, err := os.MkdirTemp("", "gbrc-")
+	must(err, "create work directory")
+	defer os.RemoveAll(work)
+
+	cg, err := codegen.New(blocks, romFile.Bytes())
+	must(err, "generate ir")
+
+	name := strings.TrimSuffix(filepath.Base(opt.romPath), filepath.Ext(opt.romPath))
+	ir := filepath.Join(work, name+".ll")
+	must(cg.WriteTo(ir), "write ir")
+
+	must(run("opt", "-O2", "-S", ir, "-o", ir), "optimize ir")
+
+	if opt.onlyIR || opt.saveIR {
+		data, err := os.ReadFile(ir)
+		must(err, "read ir")
+		dst := filepath.Join(opt.outDir, name+".ll")
+		must(os.WriteFile(dst, data, 0o644), "save ir")
+		log.Printf("wrote %s", dst)
+	}
+	if opt.onlyIR {
+		return
+	}
+
+	tc := selectToolchain(opt.target)
+
+	runtimeDir, err := extractRuntime(runtimeFS)
+	must(err, "unpack runtime")
+	defer os.RemoveAll(runtimeDir)
+
+	include := filepath.Join(runtimeDir, "runtime", "include")
+
+	romObj := filepath.Join(work, name+".o")
+	compile(tc, ir, romObj, "-x", "ir")
+
+	sources, err := collectSources(filepath.Join(runtimeDir, "runtime", "src"))
+	must(err, "collect runtime sources")
+
+	objs := []string{romObj}
+	for i, src := range sources {
+		obj := filepath.Join(work, fmt.Sprintf("core_%d.o", i))
+		compile(tc, src, obj, "-I"+include)
+		objs = append(objs, obj)
+	}
+
+	outPath := filepath.Join(opt.outDir, name+tc.outExt)
+	args := slices.Clone(tc.flags)
+	args = append(args, "-O2")
+	args = append(args, objs...)
+	args = append(args, opt.frontend)
+	args = append(args, tc.libs...)
+	args = append(args, tc.link...)
+	args = append(args, "-o", outPath)
+
+	must(run(tc.cc, args...), "link")
+	log.Printf("wrote %s", outPath)
+}
+
+func parseFlags() options {
+	var o options
+
+	flag.StringVar(&o.romPath, "rom", "", "path to the gameboy rom (required)")
+	flag.StringVar(&o.outDir, "out", "", "output directory (default: directory of the rom)")
+	flag.StringVar(&o.profile, "profile", "", "seed additional entry points from a dynamic block discovery profile")
+	flag.StringVar(&o.frontend, "frontend", "", "compiled object file of the frontend to link against (required)")
+	flag.StringVar(&o.target, "target", "", "target architecture, e.g. wasm (uses emscripten for wasm targets)")
+	flag.BoolVar(&o.onlyIR, "only-ir", false, "emit only the generated llvm ir")
+	flag.BoolVar(&o.saveIR, "save-ir", false, "also emit the generated llvm ir alongside the binary")
 	flag.Parse()
 
-	if romFilePath == "" {
-		usage()
+	if o.romPath == "" {
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	if _, err := os.Stat(romFilePath); err != nil {
-		log.Fatalf("cannot read rom: %s", err)
+	_, err := os.Stat(o.romPath)
+	must(err, "cannot read rom")
+
+	if !o.onlyIR {
+		if o.frontend == "" {
+			log.Fatal("--frontend is required")
+		}
+		_, err = os.Stat(o.frontend)
+		must(err, "cannot read frontend object")
 	}
 
-	if outDir == "" {
-		outDir = filepath.Dir(romFilePath)
+	if o.outDir == "" {
+		o.outDir = filepath.Dir(o.romPath)
 	}
 
-	toOptimize = !*noOptFlag
-	toCompile = !*noCompileFlag
-	optimizeSize = *sizeFlag
-}
-
-func usage() {
-	out := flag.CommandLine.Output()
-	fmt.Fprintf(out, "gbrc - gameboy static recompiler\n\n")
-	fmt.Fprintf(out, "usage:\n  gbrc -rom <rom.gb> [options]\n\n")
-	fmt.Fprintf(out, "options:\n")
-	flag.PrintDefaults()
-}
-
-func romBaseName(path string) string {
-	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	return o
 }
 
 func readSeeds(path string) ([]uint16, error) {
@@ -145,12 +171,7 @@ func readSeeds(path string) ([]uint16, error) {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		v, err := strconv.ParseUint(line, 16, 16)
+		v, err := strconv.ParseUint(strings.TrimSpace(scanner.Text()), 16, 16)
 		if err != nil {
 			continue
 		}
@@ -165,112 +186,49 @@ func readSeeds(path string) ([]uint16, error) {
 	return seeds, scanner.Err()
 }
 
-func compile(runtimeFS fs.FS, irPath, outPath string) error {
-	runtimeDir, cleanup, err := extractRuntime(runtimeFS)
-	if err != nil {
-		return fmt.Errorf("failed to unpack runtime: %w", err)
-	}
-	defer cleanup()
-
-	requireTool("clang")
-	requireTool("pkg-config")
-
-	runtimeInclude := filepath.Join(runtimeDir, "include")
-	runtimeSources, err := collectSources(filepath.Join(runtimeDir, "src"))
-	if err != nil {
-		return err
-	}
-
-	sdlCFlags, err := exec.Command("pkg-config", "--cflags", "sdl2").Output()
-	if err != nil {
-		return fmt.Errorf("sdl2 not found")
-	}
-
-	sdlLibs, err := exec.Command("pkg-config", "--libs", "sdl2").Output()
-	if err != nil {
-		return fmt.Errorf("sdl2 not found")
-	}
-
-	optLevel := "-O2"
-	if optimizeSize {
-		optLevel = "-Oz"
-	}
-
-	args := []string{
-		optLevel,
-		"-ffunction-sections",
-		"-fdata-sections",
-		"-fno-asynchronous-unwind-tables",
-		"-fno-unwind-tables",
-		"-fno-stack-protector",
-		"-I" + runtimeInclude,
-	}
-	args = append(args, strings.Fields(string(sdlCFlags))...)
-	args = append(args, irPath)
-	args = append(args, runtimeSources...)
-	args = append(args, strings.Fields(string(sdlLibs))...)
-	args = append(args,
-		"-Wl,--gc-sections",
-		"-Wl,--build-id=none",
-		"-Wl,-O1",
-		"-Wl,-z,noseparate-code",
-		"-s",
-		"-o", outPath,
-	)
-
-	compileCmd := exec.Command("clang", args...)
-	compileCmd.Stderr = os.Stderr
-	if err := compileCmd.Run(); err != nil {
-		return fmt.Errorf("failed to compile ir: %w", err)
-	}
-
-	return nil
-}
-
-func collectSources(root string) ([]string, error) {
-	var sources []string
-
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+func selectToolchain(target string) toolchain {
+	switch {
+	case target == "":
+		tc := toolchain{
+			cc: "clang",
+			link: []string{
+				"-Wl,--gc-sections",
+				"-Wl,--build-id=none",
+				"-Wl,-O1",
+				"-Wl,-z,noseparate-code",
+				"-s",
+			},
 		}
 
-		if !d.IsDir() && filepath.Ext(path) == ".c" {
-			sources = append(sources, path)
+		if out, err := exec.Command("pkg-config", "--libs", "sdl2").Output(); err == nil {
+			tc.libs = strings.Fields(string(out))
 		}
 
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
+		return tc
+	case strings.HasPrefix(target, "wasm"):
+		tc := toolchain{cc: "emcc", outExt: ".html"}
+		if shell := os.Getenv("GBRC_SHELL"); shell != "" {
+			tc.link = []string{"--shell-file", shell}
+		}
 
-	if len(sources) == 0 {
-		return nil, fmt.Errorf("failed to locate runtime sources in %s", root)
+		return tc
+	default:
+		return toolchain{cc: "clang", flags: []string{"-target", target}}
 	}
-
-	return sources, nil
 }
 
-func extractRuntime(runtimeFS fs.FS) (string, func(), error) {
+func extractRuntime(runtimeFS fs.FS) (string, error) {
 	dir, err := os.MkdirTemp("", "gbrc-runtime-")
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	cleanup := func() { os.RemoveAll(dir) }
-
-	if err = fs.WalkDir(runtimeFS, "runtime", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
+	err = fs.WalkDir(runtimeFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
 			return err
 		}
 
-		if d.IsDir() {
-			return nil
-		}
-
-		rel := strings.TrimPrefix(path, "runtime/")
-		target := filepath.Join(dir, rel)
+		target := filepath.Join(dir, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
@@ -281,16 +239,54 @@ func extractRuntime(runtimeFS fs.FS) (string, func(), error) {
 		}
 
 		return os.WriteFile(target, data, 0o644)
-	}); err != nil {
-		cleanup()
-		return "", nil, err
+	})
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", err
 	}
 
-	return dir, cleanup, nil
+	return dir, nil
 }
 
-func requireTool(name string) {
-	if _, err := exec.LookPath(name); err != nil {
-		log.Fatalf("required tool %q not found in PATH", name)
+func collectSources(root string) ([]string, error) {
+	var sources []string
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".c" {
+			sources = append(sources, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("failed to locate runtime sources in %s", root)
+	}
+
+	return sources, nil
+}
+
+func compile(tc toolchain, src, obj string, extra ...string) {
+	args := slices.Clone(tc.flags)
+	args = append(args, compileFlags...)
+	args = append(args, extra...)
+	args = append(args, "-c", src, "-o", obj)
+	must(run(tc.cc, args...), "compile "+filepath.Base(src))
+}
+
+func run(tool string, args ...string) error {
+	cmd := exec.Command(tool, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func must(err error, what string) {
+	if err != nil {
+		log.Fatalf("%s: %s", what, err)
 	}
 }

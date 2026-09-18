@@ -1,10 +1,9 @@
 #include "hardware/apu.h"
-#include "gb.h"
+#include "gbrc.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
-#define CYCLES_PER_SAMPLE (GB_CPU_HZ / APU_SAMPLE_RATE)
 #define FRAME_SEQ_PERIOD 8192
 #define FLUSH_SAMPLES 1024
 
@@ -18,19 +17,27 @@ static const uint8_t DUTY[4][8] = {
 static const uint8_t NOISE_DIV[8] = {8, 16, 32, 48, 64, 80, 96, 112};
 
 typedef struct {
+	uint8_t volume;
+	uint8_t initial;
+	bool dir;
+	uint8_t period;
+	uint8_t timer;
+} Envelope;
+
+typedef struct {
+	uint16_t counter;
+	bool enable;
+} Length;
+
+typedef struct {
 	bool enabled;
 	bool dac;
 	uint8_t duty;
 	uint8_t duty_pos;
 	uint16_t freq;
 	int32_t timer;
-	uint8_t volume;
-	uint8_t env_initial;
-	bool env_dir;
-	uint8_t env_period;
-	uint8_t env_timer;
-	uint16_t length;
-	bool length_enable;
+	Envelope env;
+	Length length;
 } Square;
 
 typedef struct {
@@ -40,8 +47,7 @@ typedef struct {
 	int32_t timer;
 	uint8_t pos;
 	uint8_t volume_code;
-	uint16_t length;
-	bool length_enable;
+	Length length;
 } Wave;
 
 typedef struct {
@@ -52,13 +58,8 @@ typedef struct {
 	uint8_t divisor;
 	uint8_t shift;
 	int32_t timer;
-	uint8_t volume;
-	uint8_t env_initial;
-	bool env_dir;
-	uint8_t env_period;
-	uint8_t env_timer;
-	uint16_t length;
-	bool length_enable;
+	Envelope env;
+	Length length;
 } Noise;
 
 typedef struct {
@@ -88,8 +89,6 @@ typedef struct {
 
 static Apu apu;
 
-void (*apu_output)(const int16_t *samples, int count) = 0;
-
 void apu_init(void) {
 	memset(&apu, 0, sizeof(apu));
 	apu.last_cycles = cycles;
@@ -99,23 +98,15 @@ static uint32_t noise_period(void) {
 	return (uint32_t)NOISE_DIV[apu.ch4.divisor] << apu.ch4.shift;
 }
 
-static int ch1_out(void) {
-	if (!apu.ch1.enabled || !apu.ch1.dac) {
+static int square_out(const Square *sq) {
+	if (!sq->enabled || !sq->dac) {
 		return 0;
 	}
 
-	return DUTY[apu.ch1.duty][apu.ch1.duty_pos] ? apu.ch1.volume : 0;
+	return DUTY[sq->duty][sq->duty_pos] ? sq->env.volume : 0;
 }
 
-static int ch2_out(void) {
-	if (!apu.ch2.enabled || !apu.ch2.dac) {
-		return 0;
-	}
-
-	return DUTY[apu.ch2.duty][apu.ch2.duty_pos] ? apu.ch2.volume : 0;
-}
-
-static int ch3_out(void) {
+static int wave_out(void) {
 	if (!apu.ch3.enabled || !apu.ch3.dac || apu.ch3.volume_code == 0) {
 		return 0;
 	}
@@ -125,12 +116,12 @@ static int ch3_out(void) {
 	return sample >> (apu.ch3.volume_code - 1);
 }
 
-static int ch4_out(void) {
+static int noise_out(void) {
 	if (!apu.ch4.enabled || !apu.ch4.dac) {
 		return 0;
 	}
 
-	return (apu.ch4.lfsr & 1) ? 0 : apu.ch4.volume;
+	return (apu.ch4.lfsr & 1) ? 0 : apu.ch4.env.volume;
 }
 
 static void noise_step(void) {
@@ -142,24 +133,21 @@ static void noise_step(void) {
 	}
 }
 
+static void square_advance(Square *sq, uint32_t t) {
+	if (!sq->enabled) {
+		return;
+	}
+
+	sq->timer -= (int32_t)t;
+	while (sq->timer <= 0) {
+		sq->timer += 32 * (2048 - sq->freq);
+		sq->duty_pos = (uint8_t)((sq->duty_pos + 1) & 7);
+	}
+}
+
 static void advance(uint32_t t) {
-	if (apu.ch1.enabled) {
-		apu.ch1.timer -= (int32_t)t;
-
-		while (apu.ch1.timer <= 0) {
-			apu.ch1.timer += 32 * (2048 - apu.ch1.freq);
-			apu.ch1.duty_pos = (uint8_t)((apu.ch1.duty_pos + 1) & 7);
-		}
-	}
-
-	if (apu.ch2.enabled) {
-		apu.ch2.timer -= (int32_t)t;
-
-		while (apu.ch2.timer <= 0) {
-			apu.ch2.timer += 32 * (2048 - apu.ch2.freq);
-			apu.ch2.duty_pos = (uint8_t)((apu.ch2.duty_pos + 1) & 7);
-		}
-	}
+	square_advance(&apu.ch1, t);
+	square_advance(&apu.ch2, t);
 
 	if (apu.ch3.enabled) {
 		apu.ch3.timer -= (int32_t)t;
@@ -188,7 +176,8 @@ static void mix(int16_t *left, int16_t *right) {
 		return;
 	}
 
-	int v[4] = {ch1_out(), ch2_out(), ch3_out(), ch4_out()};
+	int v[4] = {square_out(&apu.ch1), square_out(&apu.ch2), wave_out(),
+	            noise_out()};
 	int sl = 0, sr = 0;
 
 	for (int i = 0; i < 4; i++) {
@@ -207,88 +196,38 @@ static void mix(int16_t *left, int16_t *right) {
 	*right = (int16_t)(sr * (vr + 1) * 60);
 }
 
-static void clock_length(void) {
-	if (apu.ch1.length_enable && apu.ch1.length > 0) {
-		apu.ch1.length--;
+static void clock_length(Length *len, bool *enabled) {
+	if (len->enable && len->counter > 0) {
+		len->counter--;
 
-		if (apu.ch1.length == 0) {
-			apu.ch1.enabled = false;
-		}
-	}
-
-	if (apu.ch2.length_enable && apu.ch2.length > 0) {
-		apu.ch2.length--;
-
-		if (apu.ch2.length == 0) {
-			apu.ch2.enabled = false;
-		}
-	}
-
-	if (apu.ch3.length_enable && apu.ch3.length > 0) {
-		apu.ch3.length--;
-
-		if (apu.ch3.length == 0) {
-			apu.ch3.enabled = false;
-		}
-	}
-
-	if (apu.ch4.length_enable && apu.ch4.length > 0) {
-		apu.ch4.length--;
-
-		if (apu.ch4.length == 0) {
-			apu.ch4.enabled = false;
+		if (len->counter == 0) {
+			*enabled = false;
 		}
 	}
 }
 
-static void clock_envelope(Square *sq) {
-	if (sq->env_period == 0) {
+static void clock_envelope(Envelope *env) {
+	if (env->period == 0) {
 		return;
 	}
 
-	if (sq->env_timer > 0) {
-		sq->env_timer--;
+	if (env->timer > 0) {
+		env->timer--;
 	}
 
-	if (sq->env_timer != 0) {
+	if (env->timer != 0) {
 		return;
 	}
 
-	sq->env_timer = sq->env_period;
+	env->timer = env->period;
 
-	if (sq->env_dir) {
-		if (sq->volume < 15) {
-			sq->volume++;
+	if (env->dir) {
+		if (env->volume < 15) {
+			env->volume++;
 		}
 	} else {
-		if (sq->volume > 0) {
-			sq->volume--;
-		}
-	}
-}
-
-static void clock_envelope_noise(void) {
-	if (apu.ch4.env_period == 0) {
-		return;
-	}
-
-	if (apu.ch4.env_timer > 0) {
-		apu.ch4.env_timer--;
-	}
-
-	if (apu.ch4.env_timer != 0) {
-		return;
-	}
-
-	apu.ch4.env_timer = apu.ch4.env_period;
-
-	if (apu.ch4.env_dir) {
-		if (apu.ch4.volume < 15) {
-			apu.ch4.volume++;
-		}
-	} else {
-		if (apu.ch4.volume > 0) {
-			apu.ch4.volume--;
+		if (env->volume > 0) {
+			env->volume--;
 		}
 	}
 }
@@ -335,15 +274,18 @@ static void frame_step(void) {
 	case 2:
 	case 4:
 	case 6:
-		clock_length();
+		clock_length(&apu.ch1.length, &apu.ch1.enabled);
+		clock_length(&apu.ch2.length, &apu.ch2.enabled);
+		clock_length(&apu.ch3.length, &apu.ch3.enabled);
+		clock_length(&apu.ch4.length, &apu.ch4.enabled);
 		if (apu.fs_step == 2 || apu.fs_step == 6) {
 			clock_sweep();
 		}
 		break;
 	case 7:
-		clock_envelope(&apu.ch1);
-		clock_envelope(&apu.ch2);
-		clock_envelope_noise();
+		clock_envelope(&apu.ch1.env);
+		clock_envelope(&apu.ch2.env);
+		clock_envelope(&apu.ch4.env);
 		break;
 	default:
 		break;
@@ -369,7 +311,11 @@ void apu_tick(void) {
 	int n = 0;
 
 	while (elapsed > 0) {
-		uint32_t to_sample = CYCLES_PER_SAMPLE - apu.sample_acc;
+		// sample_acc counts clock cycles * GB_SAMPLE_RATE, and a sample is
+		// emitted once it reaches GB_CPU_HZ. This keeps the average rate
+		// exact instead of truncating GB_CPU_HZ / GB_SAMPLE_RATE.
+		uint32_t to_sample =
+		    (GB_CPU_HZ - apu.sample_acc + GB_SAMPLE_RATE - 1) / GB_SAMPLE_RATE;
 		uint32_t to_fs = FRAME_SEQ_PERIOD - apu.fs_acc;
 		uint32_t step = elapsed;
 		if (to_sample < step) {
@@ -379,14 +325,14 @@ void apu_tick(void) {
 			step = to_fs;
 		}
 
-		apu.sample_acc += step;
+		apu.sample_acc += step * GB_SAMPLE_RATE;
 		apu.fs_acc += step;
 		elapsed -= step;
 
 		advance(step);
 
-		if (apu.sample_acc >= CYCLES_PER_SAMPLE) {
-			apu.sample_acc = 0;
+		if (apu.sample_acc >= GB_CPU_HZ) {
+			apu.sample_acc -= GB_CPU_HZ;
 
 			int16_t l, r;
 			mix(&l, &r);
@@ -394,9 +340,7 @@ void apu_tick(void) {
 			buf[n++] = r;
 
 			if (n >= FLUSH_SAMPLES) {
-				if (apu_output) {
-					apu_output(buf, n);
-				}
+				gb_prepare_audio(buf, n);
 				n = 0;
 			}
 		}
@@ -407,8 +351,8 @@ void apu_tick(void) {
 		}
 	}
 
-	if (n != 0 && apu_output) {
-		apu_output(buf, n);
+	if (n != 0) {
+		gb_prepare_audio(buf, n);
 	}
 }
 
@@ -476,11 +420,11 @@ uint8_t apu_read(uint16_t addr) {
 }
 
 static void trigger_square(Square *sq, bool sweep) {
-	if (sq->length == 0) {
-		sq->length = 64;
+	if (sq->length.counter == 0) {
+		sq->length.counter = 64;
 	}
-	sq->volume = sq->env_initial;
-	sq->env_timer = sq->env_period ? sq->env_period : 8;
+	sq->env.volume = sq->env.initial;
+	sq->env.timer = sq->env.period ? sq->env.period : 8;
 	sq->timer = 32 * (2048 - sq->freq);
 	sq->duty_pos = 0;
 	sq->enabled = sq->dac;
@@ -495,8 +439,8 @@ static void trigger_square(Square *sq, bool sweep) {
 }
 
 static void trigger_wave(void) {
-	if (apu.ch3.length == 0) {
-		apu.ch3.length = 256;
+	if (apu.ch3.length.counter == 0) {
+		apu.ch3.length.counter = 256;
 	}
 	apu.ch3.timer = 2 * (2048 - apu.ch3.freq);
 	apu.ch3.pos = 0;
@@ -504,11 +448,11 @@ static void trigger_wave(void) {
 }
 
 static void trigger_noise(void) {
-	if (apu.ch4.length == 0) {
-		apu.ch4.length = 64;
+	if (apu.ch4.length.counter == 0) {
+		apu.ch4.length.counter = 64;
 	}
-	apu.ch4.volume = apu.ch4.env_initial;
-	apu.ch4.env_timer = apu.ch4.env_period ? apu.ch4.env_period : 8;
+	apu.ch4.env.volume = apu.ch4.env.initial;
+	apu.ch4.env.timer = apu.ch4.env.period ? apu.ch4.env.period : 8;
 	apu.ch4.lfsr = 0x7FFF;
 	apu.ch4.timer = (int32_t)noise_period();
 	apu.ch4.enabled = apu.ch4.dac;
@@ -559,107 +503,107 @@ void apu_write(uint16_t addr, uint8_t val) {
 	}
 	apu.regs[i] = val;
 
-	switch (addr) {
-	case 0xFF10:
+	switch (i) {
+	case 0x00: /* FF10 */
 		apu.sweep_period = (val >> 4) & 7;
 		apu.sweep_dir = (val & 0x08) != 0;
 		apu.sweep_shift = val & 7;
 		break;
-	case 0xFF11:
+	case 0x01: /* FF11 */
 		apu.ch1.duty = val >> 6;
-		apu.ch1.length = (uint16_t)(64 - (val & 0x3F));
+		apu.ch1.length.counter = (uint16_t)(64 - (val & 0x3F));
 		break;
-	case 0xFF12:
-		apu.ch1.env_initial = val >> 4;
-		apu.ch1.env_dir = (val & 0x08) != 0;
-		apu.ch1.env_period = val & 7;
+	case 0x02: /* FF12 */
+		apu.ch1.env.initial = val >> 4;
+		apu.ch1.env.dir = (val & 0x08) != 0;
+		apu.ch1.env.period = val & 7;
 		apu.ch1.dac = (val & 0xF8) != 0;
 		if (!apu.ch1.dac) {
 			apu.ch1.enabled = false;
 		}
 		break;
-	case 0xFF13:
+	case 0x03: /* FF13 */
 		apu.ch1.freq = (uint16_t)((apu.ch1.freq & 0x700) | val);
 		break;
-	case 0xFF14:
+	case 0x04: /* FF14 */
 		apu.ch1.freq = (uint16_t)((apu.ch1.freq & 0xFF) | ((val & 7) << 8));
-		apu.ch1.length_enable = (val & 0x40) != 0;
+		apu.ch1.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_square(&apu.ch1, true);
 		}
 		break;
-	case 0xFF16:
+	case 0x06: /* FF16 */
 		apu.ch2.duty = val >> 6;
-		apu.ch2.length = (uint16_t)(64 - (val & 0x3F));
+		apu.ch2.length.counter = (uint16_t)(64 - (val & 0x3F));
 		break;
-	case 0xFF17:
-		apu.ch2.env_initial = val >> 4;
-		apu.ch2.env_dir = (val & 0x08) != 0;
-		apu.ch2.env_period = val & 7;
+	case 0x07: /* FF17 */
+		apu.ch2.env.initial = val >> 4;
+		apu.ch2.env.dir = (val & 0x08) != 0;
+		apu.ch2.env.period = val & 7;
 		apu.ch2.dac = (val & 0xF8) != 0;
 		if (!apu.ch2.dac) {
 			apu.ch2.enabled = false;
 		}
 		break;
-	case 0xFF18:
+	case 0x08: /* FF18 */
 		apu.ch2.freq = (uint16_t)((apu.ch2.freq & 0x700) | val);
 		break;
-	case 0xFF19:
+	case 0x09: /* FF19 */
 		apu.ch2.freq = (uint16_t)((apu.ch2.freq & 0xFF) | ((val & 7) << 8));
-		apu.ch2.length_enable = (val & 0x40) != 0;
+		apu.ch2.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_square(&apu.ch2, false);
 		}
 		break;
-	case 0xFF1A:
+	case 0x0A: /* FF1A */
 		apu.ch3.dac = (val & 0x80) != 0;
 		if (!apu.ch3.dac) {
 			apu.ch3.enabled = false;
 		}
 		break;
-	case 0xFF1B:
-		apu.ch3.length = (uint16_t)(256 - val);
+	case 0x0B: /* FF1B */
+		apu.ch3.length.counter = (uint16_t)(256 - val);
 		break;
-	case 0xFF1C:
+	case 0x0C: /* FF1C */
 		apu.ch3.volume_code = (val >> 5) & 3;
 		break;
-	case 0xFF1D:
+	case 0x0D: /* FF1D */
 		apu.ch3.freq = (uint16_t)((apu.ch3.freq & 0x700) | val);
 		break;
-	case 0xFF1E:
+	case 0x0E: /* FF1E */
 		apu.ch3.freq = (uint16_t)((apu.ch3.freq & 0xFF) | ((val & 7) << 8));
-		apu.ch3.length_enable = (val & 0x40) != 0;
+		apu.ch3.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_wave();
 		}
 		break;
-	case 0xFF20:
-		apu.ch4.length = (uint16_t)(64 - (val & 0x3F));
+	case 0x10: /* FF20 */
+		apu.ch4.length.counter = (uint16_t)(64 - (val & 0x3F));
 		break;
-	case 0xFF21:
-		apu.ch4.env_initial = val >> 4;
-		apu.ch4.env_dir = (val & 0x08) != 0;
-		apu.ch4.env_period = val & 7;
+	case 0x11: /* FF21 */
+		apu.ch4.env.initial = val >> 4;
+		apu.ch4.env.dir = (val & 0x08) != 0;
+		apu.ch4.env.period = val & 7;
 		apu.ch4.dac = (val & 0xF8) != 0;
 		if (!apu.ch4.dac) {
 			apu.ch4.enabled = false;
 		}
 		break;
-	case 0xFF22:
+	case 0x12: /* FF22 */
 		apu.ch4.shift = val >> 4;
 		apu.ch4.width7 = (val & 0x08) != 0;
 		apu.ch4.divisor = val & 7;
 		break;
-	case 0xFF23:
-		apu.ch4.length_enable = (val & 0x40) != 0;
+	case 0x13: /* FF23 */
+		apu.ch4.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_noise();
 		}
 		break;
-	case 0xFF24:
+	case 0x14: /* FF24 */
 		apu.nr50 = val;
 		break;
-	case 0xFF25:
+	case 0x15: /* FF25 */
 		apu.nr51 = val;
 		break;
 	default:

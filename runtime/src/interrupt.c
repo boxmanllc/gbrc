@@ -1,5 +1,5 @@
 #include "interrupt.h"
-#include "gb.h"
+#include "gbrc.h"
 #include <stdint.h>
 
 static uint8_t if_reg;

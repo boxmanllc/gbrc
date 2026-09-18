@@ -1,12 +1,14 @@
-#include "frontend.h"
-#include "gb.h"
+#include "gbrc.h"
 #include "hardware/apu.h"
+#include "hardware/joypad.h"
 #include "hardware/ppu.h"
 #include "hardware/timer.h"
+#include "interrupt.h"
 #include "profile.h"
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
+
+static const char *g_profile_path;
 
 static const char *mbc_type_name(uint8_t t) {
 	switch (t) {
@@ -79,73 +81,35 @@ static void print_rom_info(void) {
 	printf("  ROM Version: %d\n", ram[0x014C]);
 }
 
-static const char *parse_profile_flag(int argc, char **argv) {
-	for (int i = 1; i < argc; i++) {
-		if ((strcmp(argv[i], "--profile") == 0 ||
-		     strcmp(argv[i], "-profile") == 0) &&
-		    i + 1 < argc) {
-			return argv[i + 1];
-		}
-
-		if (strncmp(argv[i], "--profile=", 10) == 0) {
-			return argv[i] + 10;
-		}
-
-		if (strncmp(argv[i], "-profile=", 9) == 0) {
-			return argv[i] + 9;
-		}
-	}
-
-	return NULL;
-}
-
-int main(int argc, char **argv) {
-	const char *profilePath = parse_profile_flag(argc, argv);
-
+bool gb_attach(const char *title_override) {
 	rom_init();
-
 	print_rom_info();
-	printf("Controls: WASD/arrows = D-pad, Z = A, X = B, Enter = Start, "
-	       "Backspace/Shift = Select, Esc = quit\n");
 
 	char title[32];
 	rom_title(title, sizeof(title));
-	if (title[0] == '\0') {
-		snprintf(title, sizeof(title), "gbrc");
+
+	const char *window_title = title_override;
+	if (!window_title || window_title[0] == '\0') {
+		window_title = title[0] ? title : "gbrc";
 	}
 
-	if (!frontend_init(title)) {
-		fprintf(stderr, "failed to initialize frontend\n");
-		return 1;
-	}
-
-	ppu_present = frontend_present;
-	apu_output = frontend_present_audio;
-	gb_init();
+	interrupt_init();
+	timer_init();
+	joypad_init();
+	ppu_init();
+	apu_init();
 
 	g_budget = GB_CYCLES_PER_FRAME;
-	unsigned long frame = 0;
-	for (;;) {
-		frontend_poll();
-		if (frontend_should_quit()) {
-			break;
-		}
 
-		rom_main();
-		ppu_tick();
-		timer_tick();
-		apu_tick();
-		g_budget = cycles + GB_CYCLES_PER_FRAME;
-		frontend_wait_frame();
-
-		frame++;
-		if (profilePath && frame % 60 == 0) {
-			profile_dump(profilePath);
-		}
-	}
-
-	profile_dump(profilePath);
-
-	frontend_close();
-	return 0;
+	return gb_init(window_title);
 }
+
+void gb_set_profile_path(const char *path) { g_profile_path = path; }
+
+void gb_profile_tick(uint32_t frame) {
+	if (g_profile_path && frame % 60 == 0) {
+		profile_dump(g_profile_path);
+	}
+}
+
+void gb_profile_flush(void) { profile_dump(g_profile_path); }

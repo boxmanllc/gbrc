@@ -1,5 +1,4 @@
-#include "emulator.h"
-#include "gb.h"
+#include "gbrc.h"
 #include "hardware/ram.h"
 #include "interrupt.h"
 #include "profile.h"
@@ -46,53 +45,13 @@ static void set_af(uint16_t v) {
 	c_flag = (v & 0x10) != 0;
 }
 
-static uint8_t get_reg8(uint8_t enc) {
-	switch (enc & 0x07) {
-	case 0:
-		return b_reg;
-	case 1:
-		return c_reg;
-	case 2:
-		return d_reg;
-	case 3:
-		return e_reg;
-	case 4:
-		return h_reg;
-	case 5:
-		return l_reg;
-	case 7:
-		return a_reg;
-	default:
-		return 0;
-	}
-}
-static void set_reg8(uint8_t enc, uint8_t v) {
-	switch (enc & 0x07) {
-	case 0:
-		b_reg = v;
-		break;
-	case 1:
-		c_reg = v;
-		break;
-	case 2:
-		d_reg = v;
-		break;
-	case 3:
-		e_reg = v;
-		break;
-	case 4:
-		h_reg = v;
-		break;
-	case 5:
-		l_reg = v;
-		break;
-	case 7:
-		a_reg = v;
-		break;
-	default:
-		break;
-	}
-}
+static uint8_t hl_dummy;
+static uint8_t *const REG8[8] = {
+    &b_reg, &c_reg, &d_reg, &e_reg, &h_reg, &l_reg, &hl_dummy, &a_reg,
+};
+
+static uint8_t get_reg8(uint8_t enc) { return *REG8[enc & 0x07]; }
+static void set_reg8(uint8_t enc, uint8_t v) { *REG8[enc & 0x07] = v; }
 
 static uint16_t read16(uint16_t addr) {
 	return (uint16_t)read_ram(addr) | (uint16_t)read_ram((uint16_t)(addr + 1))
@@ -376,7 +335,7 @@ static void cb_exec(uint16_t addr) {
 	}
 }
 
-uint16_t interp_run(uint16_t start_pc) {
+uint16_t emulator_run(uint16_t start_pc) {
 	uint16_t p = start_pc;
 
 	profile_record(start_pc);

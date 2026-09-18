@@ -34,11 +34,11 @@ type Codegen struct {
 
 	gBudget *ir.Global
 
-	readRam   *ir.Func
-	writeRam  *ir.Func
-	readMem   *ir.Func
-	interpRun *ir.Func
-	intSvc    *ir.Func
+	readRam     *ir.Func
+	writeRam    *ir.Func
+	readMem     *ir.Func
+	emulatorRun *ir.Func
+	intSvc      *ir.Func
 }
 
 type function struct {
@@ -121,7 +121,7 @@ func (cg *Codegen) emitGlobals(romBytes []byte) {
 	cg.ime.Linkage = enum.LinkageExternal
 
 	cg.gBudget = cg.module.NewGlobalDef("g_budget", constant.NewInt(types.I32, math.MaxUint32))
-	cg.interpRun = cg.module.NewFunc("interp_run", types.I16, ir.NewParam("pc", types.I16))
+	cg.emulatorRun = cg.module.NewFunc("emulator_run", types.I16, ir.NewParam("pc", types.I16))
 	cg.intSvc = cg.module.NewFunc("interrupt_service", types.I16)
 
 	cg.readRam = cg.module.NewFunc("read_ram", types.I8, ir.NewParam("addr", types.I16))
@@ -408,7 +408,7 @@ func (cg *Codegen) setupReturnDispatcher(blocks []*analyzer.Block) error {
 	}
 
 	pcVal := cur.NewLoad(types.I16, cg.pc)
-	newPC := cur.NewCall(cg.interpRun, pcVal)
+	newPC := cur.NewCall(cg.emulatorRun, pcVal)
 	cur.NewStore(newPC, cg.pc)
 	cur.NewBr(dispatch)
 	return nil

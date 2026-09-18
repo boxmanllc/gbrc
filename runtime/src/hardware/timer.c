@@ -1,7 +1,8 @@
 #include "hardware/timer.h"
-#include "gb.h"
+#include "gbrc.h"
 #include "interrupt.h"
 #include <stdint.h>
+#include <string.h>
 
 #define DIV 0xFF04
 #define TIMA 0xFF05
@@ -21,14 +22,7 @@ static Timer tmr;
 
 static const uint32_t tima_period[4] = {1024, 16, 64, 256};
 
-void timer_init(void) {
-	tmr.div_counter = 0;
-	tmr.tima = 0;
-	tmr.tma = 0;
-	tmr.tac = 0;
-	tmr.tima_accum = 0;
-	tmr.last_cycles = 0;
-}
+void timer_init(void) { memset(&tmr, 0, sizeof(tmr)); }
 
 void timer_tick(void) {
 	uint32_t now = cycles;

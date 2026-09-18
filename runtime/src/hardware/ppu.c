@@ -1,5 +1,5 @@
 #include "hardware/ppu.h"
-#include "gb.h"
+#include "gbrc.h"
 #include "interrupt.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -36,18 +36,173 @@ typedef struct {
 } Ppu;
 
 static Ppu ppu;
-void (*ppu_present)(const uint8_t *) = 0;
-
-static void oam_dma(uint8_t val);
-static void update_mode_and_stat(void);
-static void render_scanline(uint8_t ly);
-static void render_sprites(uint8_t ly, uint8_t *line, const uint8_t *bg_color);
-static uint8_t shade(uint8_t palette, uint8_t color);
 
 void ppu_init(void) {
 	memset(&ppu, 0, sizeof(ppu));
 	ppu.lcdc = 0x91;
 	ppu.bgp = 0xFC;
+}
+
+static uint8_t shade(uint8_t palette, uint8_t color) {
+	return (palette >> (color * 2)) & 3;
+}
+
+static void render_sprites(uint8_t ly, uint8_t *line, const uint8_t *bg_color) {
+	uint8_t height = (ppu.lcdc & 0x04) ? 16 : 8;
+
+	int chosen[10];
+	int count = 0;
+	for (int i = 0; i < 40 && count < 10; i++) {
+		int sy = ram[0xFE00 + i * 4] - 16;
+		if ((int)ly >= sy && (int)ly < sy + height) {
+			chosen[count++] = i;
+		}
+	}
+
+	for (int a = 0; a < count; a++) {
+		for (int b = a + 1; b < count; b++) {
+			int ax = ram[0xFE00 + chosen[a] * 4 + 1];
+			int bx = ram[0xFE00 + chosen[b] * 4 + 1];
+			bool a_lower = (ax > bx) || (ax == bx && chosen[a] > chosen[b]);
+			if (!a_lower) {
+				int t = chosen[a];
+				chosen[a] = chosen[b];
+				chosen[b] = t;
+			}
+		}
+	}
+
+	for (int c = 0; c < count; c++) {
+		int i = chosen[c];
+		int sy = ram[0xFE00 + i * 4] - 16;
+		int sx = ram[0xFE00 + i * 4 + 1] - 8;
+		uint8_t tile = ram[0xFE00 + i * 4 + 2];
+		uint8_t attr = ram[0xFE00 + i * 4 + 3];
+		bool flip_y = attr & 0x40;
+		bool flip_x = attr & 0x20;
+		uint8_t pal = (attr & 0x10) ? ppu.obp1 : ppu.obp0;
+		bool behind_bg = attr & 0x80;
+
+		uint8_t row = (uint8_t)((int)ly - sy);
+		if (flip_y) {
+			row = height - 1 - row;
+		}
+		if (height == 16) {
+			tile &= 0xFE;
+		}
+		uint16_t tile_addr = 0x8000 + tile * 16 + row * 2;
+		uint8_t lo = ram[tile_addr];
+		uint8_t hi = ram[tile_addr + 1];
+
+		for (int p = 0; p < 8; p++) {
+			int x = sx + p;
+			if (x < 0 || x >= GB_LCD_WIDTH) {
+				continue;
+			}
+			uint8_t bit = flip_x ? p : 7 - p;
+			uint8_t color =
+			    (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
+			if (color == 0) {
+				continue;
+			}
+			if (behind_bg && bg_color[x] != 0) {
+				continue;
+			}
+			line[x] = shade(pal, color);
+		}
+	}
+}
+
+static void render_scanline(uint8_t ly) {
+	uint8_t *line = &ppu.framebuffer[ly * GB_LCD_WIDTH];
+	uint8_t bg_color[GB_LCD_WIDTH];
+
+	bool unsigned_tiles = ppu.lcdc & 0x10;
+	uint16_t bg_map = (ppu.lcdc & 0x08) ? 0x9C00 : 0x9800;
+	uint16_t win_map = (ppu.lcdc & 0x40) ? 0x9C00 : 0x9800;
+	bool win_on_line = (ppu.lcdc & 0x20) && ppu.win_y_cond;
+
+	for (int x = 0; x < GB_LCD_WIDTH; x++) {
+		uint8_t color = 0;
+
+		if (ppu.lcdc & 0x01) {
+			bool in_window = win_on_line && (x >= (int)ppu.wx - 7);
+			uint16_t map;
+			uint8_t px, py;
+			if (in_window) {
+				map = win_map;
+				px = (uint8_t)(x - ((int)ppu.wx - 7));
+				py = ppu.win_line;
+			} else {
+				map = bg_map;
+				px = (uint8_t)(x + ppu.scx);
+				py = (uint8_t)(ly + ppu.scy);
+			}
+
+			uint8_t tile_id = ram[map + (py / 8) * 32 + (px / 8)];
+			uint16_t tile_addr;
+			if (unsigned_tiles) {
+				tile_addr = 0x8000 + tile_id * 16;
+			} else {
+				tile_addr = 0x9000 + (int8_t)tile_id * 16;
+			}
+
+			uint8_t row = py % 8;
+			uint8_t lo = ram[tile_addr + row * 2];
+			uint8_t hi = ram[tile_addr + row * 2 + 1];
+			uint8_t bit = 7 - (px % 8);
+			color = (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
+		}
+
+		bg_color[x] = color;
+		line[x] = shade(ppu.bgp, color);
+	}
+
+	if (ppu.lcdc & 0x02) {
+		render_sprites(ly, line, bg_color);
+	}
+}
+
+static void oam_dma(uint8_t val) {
+	uint16_t src = (uint16_t)val << 8;
+	for (uint16_t i = 0; i < 0xA0; i++) {
+		ram[0xFE00 + i] = ram[src + i];
+	}
+}
+
+static void update_mode_and_stat(void) {
+	uint8_t mode;
+	if (ppu.ly >= GB_LCD_HEIGHT) {
+		mode = 1;
+	} else if (ppu.dot < MODE2_DOTS) {
+		mode = 2;
+	} else if (ppu.dot < MODE2_DOTS + MODE3_DOTS) {
+		mode = 3;
+	} else {
+		mode = 0;
+	}
+	ppu.mode = mode;
+
+	bool coincidence = (ppu.ly == ppu.lyc);
+
+	bool line = false;
+	if ((ppu.stat & 0x08) && mode == 0) {
+		line = true;
+	}
+	if ((ppu.stat & 0x10) && mode == 1) {
+		line = true;
+	}
+	if ((ppu.stat & 0x20) && mode == 2) {
+		line = true;
+	}
+	if ((ppu.stat & 0x40) && coincidence) {
+		line = true;
+	}
+
+	if (line && !ppu.stat_line) {
+		interrupt_request(INT_STAT);
+	}
+	ppu.stat_line = line;
 }
 
 void ppu_tick(void) {
@@ -85,9 +240,7 @@ void ppu_tick(void) {
 		ppu.ly++;
 		if (ppu.ly == VBLANK_LINE) {
 			interrupt_request(INT_VBLANK);
-			if (ppu_present) {
-				ppu_present(ppu.framebuffer);
-			}
+			gb_prepare_video(ppu.framebuffer);
 		}
 		if (ppu.ly >= LINES_PER_FRAME) {
 			ppu.ly = 0;
@@ -99,41 +252,6 @@ void ppu_tick(void) {
 	}
 
 	update_mode_and_stat();
-}
-
-static void update_mode_and_stat(void) {
-	uint8_t mode;
-	if (ppu.ly >= GB_LCD_HEIGHT) {
-		mode = 1;
-	} else if (ppu.dot < MODE2_DOTS) {
-		mode = 2;
-	} else if (ppu.dot < MODE2_DOTS + MODE3_DOTS) {
-		mode = 3;
-	} else {
-		mode = 0;
-	}
-	ppu.mode = mode;
-
-	bool coincidence = (ppu.ly == ppu.lyc);
-
-	bool line = false;
-	if ((ppu.stat & 0x08) && mode == 0) {
-		line = true;
-	}
-	if ((ppu.stat & 0x10) && mode == 1) {
-		line = true;
-	}
-	if ((ppu.stat & 0x20) && mode == 2) {
-		line = true;
-	}
-	if ((ppu.stat & 0x40) && coincidence) {
-		line = true;
-	}
-
-	if (line && !ppu.stat_line) {
-		interrupt_request(INT_STAT);
-	}
-	ppu.stat_line = line;
 }
 
 uint8_t ppu_read(uint16_t addr) {
@@ -207,132 +325,5 @@ void ppu_write(uint16_t addr, uint8_t val) {
 		break;
 	default:
 		break;
-	}
-}
-
-static void oam_dma(uint8_t val) {
-	uint16_t src = (uint16_t)val << 8;
-	for (uint16_t i = 0; i < 0xA0; i++) {
-		ram[0xFE00 + i] = ram[src + i];
-	}
-}
-
-static uint8_t shade(uint8_t palette, uint8_t color) {
-	return (palette >> (color * 2)) & 3;
-}
-
-static void render_scanline(uint8_t ly) {
-	uint8_t *line = &ppu.framebuffer[ly * GB_LCD_WIDTH];
-	uint8_t bg_color[GB_LCD_WIDTH];
-
-	bool unsigned_tiles = ppu.lcdc & 0x10;
-	uint16_t bg_map = (ppu.lcdc & 0x08) ? 0x9C00 : 0x9800;
-	uint16_t win_map = (ppu.lcdc & 0x40) ? 0x9C00 : 0x9800;
-	bool win_on_line = (ppu.lcdc & 0x20) && ppu.win_y_cond;
-
-	for (int x = 0; x < GB_LCD_WIDTH; x++) {
-		uint8_t color = 0;
-
-		if (ppu.lcdc & 0x01) {
-			bool in_window = win_on_line && (x >= (int)ppu.wx - 7);
-			uint16_t map;
-			uint8_t px, py;
-			if (in_window) {
-				map = win_map;
-				px = (uint8_t)(x - ((int)ppu.wx - 7));
-				py = ppu.win_line;
-			} else {
-				map = bg_map;
-				px = (uint8_t)(x + ppu.scx);
-				py = (uint8_t)(ly + ppu.scy);
-			}
-
-			uint8_t tile_id = ram[map + (py / 8) * 32 + (px / 8)];
-			uint16_t tile_addr;
-			if (unsigned_tiles) {
-				tile_addr = 0x8000 + tile_id * 16;
-			} else {
-				tile_addr = 0x9000 + (int8_t)tile_id * 16;
-			}
-
-			uint8_t row = py % 8;
-			uint8_t lo = ram[tile_addr + row * 2];
-			uint8_t hi = ram[tile_addr + row * 2 + 1];
-			uint8_t bit = 7 - (px % 8);
-			color = (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
-		}
-
-		bg_color[x] = color;
-		line[x] = shade(ppu.bgp, color);
-	}
-
-	if (ppu.lcdc & 0x02) {
-		render_sprites(ly, line, bg_color);
-	}
-}
-
-static void render_sprites(uint8_t ly, uint8_t *line, const uint8_t *bg_color) {
-	uint8_t height = (ppu.lcdc & 0x04) ? 16 : 8;
-
-	int chosen[10];
-	int count = 0;
-	for (int i = 0; i < 40 && count < 10; i++) {
-		int sy = ram[0xFE00 + i * 4] - 16;
-		if ((int)ly >= sy && (int)ly < sy + height) {
-			chosen[count++] = i;
-		}
-	}
-
-	for (int a = 0; a < count; a++) {
-		for (int b = a + 1; b < count; b++) {
-			int ax = ram[0xFE00 + chosen[a] * 4 + 1];
-			int bx = ram[0xFE00 + chosen[b] * 4 + 1];
-			bool a_lower = (ax > bx) || (ax == bx && chosen[a] > chosen[b]);
-			if (!a_lower) {
-				int t = chosen[a];
-				chosen[a] = chosen[b];
-				chosen[b] = t;
-			}
-		}
-	}
-
-	for (int c = 0; c < count; c++) {
-		int i = chosen[c];
-		int sy = ram[0xFE00 + i * 4] - 16;
-		int sx = ram[0xFE00 + i * 4 + 1] - 8;
-		uint8_t tile = ram[0xFE00 + i * 4 + 2];
-		uint8_t attr = ram[0xFE00 + i * 4 + 3];
-		bool flip_y = attr & 0x40;
-		bool flip_x = attr & 0x20;
-		uint8_t pal = (attr & 0x10) ? ppu.obp1 : ppu.obp0;
-		bool behind_bg = attr & 0x80;
-
-		uint8_t row = (uint8_t)((int)ly - sy);
-		if (flip_y) {
-			row = height - 1 - row;
-		}
-		if (height == 16) {
-			tile &= 0xFE;
-		}
-		uint16_t tile_addr = 0x8000 + tile * 16 + row * 2;
-		uint8_t lo = ram[tile_addr];
-		uint8_t hi = ram[tile_addr + 1];
-
-		for (int p = 0; p < 8; p++) {
-			int x = sx + p;
-			if (x < 0 || x >= GB_LCD_WIDTH) {
-				continue;
-			}
-			uint8_t bit = flip_x ? p : 7 - p;
-			uint8_t color =
-			    (uint8_t)((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
-			if (color == 0) {
-				continue;
-			}
-			if (behind_bg && bg_color[x] != 0) {
-				continue;
-			}
-			line[x] = shade(pal, color);
-		}
 	}
 }

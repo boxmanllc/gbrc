@@ -1,0 +1,36 @@
+[env]
+ROM = "roms/tetris.gb"
+OUT = "build"
+FRONTENDS = "build/frontends"
+
+[build]
+cmd = "bake sdl && bake build"
+
+[custom.sdl]
+cmd = """
+mkdir -p $FRONTENDS &&
+clang -O2 -I runtime/include $(pkg-config --cflags sdl2) -c runtime/examples/sdl/sdl.c -o $FRONTENDS/sdl.o
+"""
+run = false
+
+[custom.web]
+cmd = """
+mkdir -p $OUT $FRONTENDS &&
+emcc -O2 -I runtime/include -c runtime/examples/web/web.c -o $FRONTENDS/web.o
+"""
+run = false
+
+[custom.build]
+cmd = """
+mkdir -p $OUT &&
+go build -o $OUT/gbrc . &&
+if [ "${FRONTEND:-sdl}" = web ]; then
+    GBRC_SHELL=runtime/examples/web/index.html $OUT/gbrc --rom $ROM --out $OUT --target wasm --frontend $FRONTENDS/web.o
+else
+    $OUT/gbrc --rom $ROM --out $OUT --frontend $FRONTENDS/sdl.o
+fi
+"""
+run = false
+
+[custom.clean]
+cmd = "rm -rf $OUT"

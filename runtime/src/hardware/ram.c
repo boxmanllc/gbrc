@@ -1,5 +1,5 @@
 #include "hardware/ram.h"
-#include "gb.h"
+#include "gbrc.h"
 #include "hardware/apu.h"
 #include "hardware/joypad.h"
 #include "hardware/ppu.h"
