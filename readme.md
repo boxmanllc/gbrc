@@ -28,9 +28,8 @@ FRONTEND=sdl bake build
 
 It needs Emscripten SDK to be present in your `PATH`.
 
-````bash
+```bash
 bake web
 FRONTEND=web bake build
 python3 -m http.server -d ./build
-```-->
-````
+```
