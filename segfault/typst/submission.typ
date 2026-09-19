@@ -85,9 +85,9 @@ The entire pipeline of `gbrc` can be described using the following flow chart:
     node((0, 3), block(width: 9em)[*Compilation* \ using either `clang` or `emcc`]),
     edge((0, 3), (0, 4), "-|>"),
 
-    node((0, 4), block(width: 9em)[*Linking* \ with the runtime library `libgbrc.a` and the frontend object `sdl.o`]),
+    node((0, 4), block(width: 9em)[*Linking* \ with the runtime library `libgbrc.o` and the frontend object `sdl.o`]),
 
-    node((2.6, 3.5), [`libgbrc.a`]),
+    node((2.6, 3.5), [`libgbrc.o`]),
     node((2.6, 4.5), [`sdl.o`]),
     edge((2.6, 3.5), (0, 4), "-|>"),
     edge((2.6, 4.5), (0, 4), "-|>"),

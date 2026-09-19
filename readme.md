@@ -8,6 +8,12 @@ gbrc is an LLVM-based static recompiler for the Game Boy DMG-01. With gbrc, you 
 go install github.com/boxmanllc/gbrc
 ```
 
+## Pipeline
+
+Here's how gbrc's pipeline looks like:
+
+![](./assets/pipeline.png)
+
 ## Trying out examples
 
 We use [baker](https://github.com/rv178/baker) as our build system, because why not?

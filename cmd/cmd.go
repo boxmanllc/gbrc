@@ -104,17 +104,13 @@ func Run(runtimeFS fs.FS) {
 	sources, err := collectSources(filepath.Join(runtimeDir, "runtime", "src"))
 	must(err, "collect runtime sources")
 
-	objs := []string{romObj}
-	for i, src := range sources {
-		obj := filepath.Join(work, fmt.Sprintf("core_%d.o", i))
-		compile(tc, src, obj, "-I"+include)
-		objs = append(objs, obj)
-	}
+	runtimeObj := filepath.Join(work, "libgbrc.o")
+	compileRuntime(tc, sources, runtimeObj, "-I"+include)
 
 	outPath := filepath.Join(opt.outDir, name+tc.outExt)
 	args := slices.Clone(tc.flags)
 	args = append(args, "-O2")
-	args = append(args, objs...)
+	args = append(args, romObj, runtimeObj)
 	args = append(args, opt.frontend)
 	args = append(args, tc.libs...)
 	args = append(args, tc.link...)
@@ -276,6 +272,16 @@ func compile(tc toolchain, src, obj string, extra ...string) {
 	args = append(args, extra...)
 	args = append(args, "-c", src, "-o", obj)
 	must(run(tc.cc, args...), "compile "+filepath.Base(src))
+}
+
+func compileRuntime(tc toolchain, sources []string, obj string, extra ...string) {
+	args := slices.Clone(tc.flags)
+	args = append(args, compileFlags...)
+	args = append(args, extra...)
+	args = append(args, "-r")
+	args = append(args, sources...)
+	args = append(args, "-o", obj)
+	must(run(tc.cc, args...), "compile runtime")
 }
 
 func run(tool string, args ...string) error {
