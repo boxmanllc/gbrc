@@ -25,9 +25,9 @@ cmd = """
 mkdir -p $OUT &&
 go build -o $OUT/gbrc . &&
 if [ "${FRONTEND:-sdl}" = web ]; then
-    GBRC_SHELL=runtime/examples/web/index.html $OUT/gbrc --rom $ROM --out $OUT --target wasm --frontend $FRONTENDS/web.o
+    GBRC_SHELL=runtime/examples/web/index.html $OUT/gbrc --rom $ROM --out $OUT --target wasm --frontend $FRONTENDS/web.o --save-ir
 else
-    $OUT/gbrc --rom $ROM --out $OUT --frontend $FRONTENDS/sdl.o
+    $OUT/gbrc --rom $ROM --out $OUT --frontend $FRONTENDS/sdl.o --save-ir
 fi
 """
 run = false

@@ -311,16 +311,15 @@ void apu_tick(void) {
 	int n = 0;
 
 	while (elapsed > 0) {
-		// sample_acc counts clock cycles * GB_SAMPLE_RATE, and a sample is
-		// emitted once it reaches GB_CPU_HZ. This keeps the average rate
-		// exact instead of truncating GB_CPU_HZ / GB_SAMPLE_RATE.
 		uint32_t to_sample =
 		    (GB_CPU_HZ - apu.sample_acc + GB_SAMPLE_RATE - 1) / GB_SAMPLE_RATE;
 		uint32_t to_fs = FRAME_SEQ_PERIOD - apu.fs_acc;
 		uint32_t step = elapsed;
+
 		if (to_sample < step) {
 			step = to_sample;
 		}
+
 		if (to_fs < step) {
 			step = to_fs;
 		}
@@ -504,16 +503,16 @@ void apu_write(uint16_t addr, uint8_t val) {
 	apu.regs[i] = val;
 
 	switch (i) {
-	case 0x00: /* FF10 */
+	case 0x00:
 		apu.sweep_period = (val >> 4) & 7;
 		apu.sweep_dir = (val & 0x08) != 0;
 		apu.sweep_shift = val & 7;
 		break;
-	case 0x01: /* FF11 */
+	case 0x01:
 		apu.ch1.duty = val >> 6;
 		apu.ch1.length.counter = (uint16_t)(64 - (val & 0x3F));
 		break;
-	case 0x02: /* FF12 */
+	case 0x02:
 		apu.ch1.env.initial = val >> 4;
 		apu.ch1.env.dir = (val & 0x08) != 0;
 		apu.ch1.env.period = val & 7;
@@ -522,21 +521,21 @@ void apu_write(uint16_t addr, uint8_t val) {
 			apu.ch1.enabled = false;
 		}
 		break;
-	case 0x03: /* FF13 */
+	case 0x03:
 		apu.ch1.freq = (uint16_t)((apu.ch1.freq & 0x700) | val);
 		break;
-	case 0x04: /* FF14 */
+	case 0x04:
 		apu.ch1.freq = (uint16_t)((apu.ch1.freq & 0xFF) | ((val & 7) << 8));
 		apu.ch1.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_square(&apu.ch1, true);
 		}
 		break;
-	case 0x06: /* FF16 */
+	case 0x06:
 		apu.ch2.duty = val >> 6;
 		apu.ch2.length.counter = (uint16_t)(64 - (val & 0x3F));
 		break;
-	case 0x07: /* FF17 */
+	case 0x07:
 		apu.ch2.env.initial = val >> 4;
 		apu.ch2.env.dir = (val & 0x08) != 0;
 		apu.ch2.env.period = val & 7;
@@ -545,42 +544,42 @@ void apu_write(uint16_t addr, uint8_t val) {
 			apu.ch2.enabled = false;
 		}
 		break;
-	case 0x08: /* FF18 */
+	case 0x08:
 		apu.ch2.freq = (uint16_t)((apu.ch2.freq & 0x700) | val);
 		break;
-	case 0x09: /* FF19 */
+	case 0x09:
 		apu.ch2.freq = (uint16_t)((apu.ch2.freq & 0xFF) | ((val & 7) << 8));
 		apu.ch2.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_square(&apu.ch2, false);
 		}
 		break;
-	case 0x0A: /* FF1A */
+	case 0x0A:
 		apu.ch3.dac = (val & 0x80) != 0;
 		if (!apu.ch3.dac) {
 			apu.ch3.enabled = false;
 		}
 		break;
-	case 0x0B: /* FF1B */
+	case 0x0B:
 		apu.ch3.length.counter = (uint16_t)(256 - val);
 		break;
-	case 0x0C: /* FF1C */
+	case 0x0C:
 		apu.ch3.volume_code = (val >> 5) & 3;
 		break;
-	case 0x0D: /* FF1D */
+	case 0x0D:
 		apu.ch3.freq = (uint16_t)((apu.ch3.freq & 0x700) | val);
 		break;
-	case 0x0E: /* FF1E */
+	case 0x0E:
 		apu.ch3.freq = (uint16_t)((apu.ch3.freq & 0xFF) | ((val & 7) << 8));
 		apu.ch3.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_wave();
 		}
 		break;
-	case 0x10: /* FF20 */
+	case 0x10:
 		apu.ch4.length.counter = (uint16_t)(64 - (val & 0x3F));
 		break;
-	case 0x11: /* FF21 */
+	case 0x11:
 		apu.ch4.env.initial = val >> 4;
 		apu.ch4.env.dir = (val & 0x08) != 0;
 		apu.ch4.env.period = val & 7;
@@ -589,21 +588,21 @@ void apu_write(uint16_t addr, uint8_t val) {
 			apu.ch4.enabled = false;
 		}
 		break;
-	case 0x12: /* FF22 */
+	case 0x12:
 		apu.ch4.shift = val >> 4;
 		apu.ch4.width7 = (val & 0x08) != 0;
 		apu.ch4.divisor = val & 7;
 		break;
-	case 0x13: /* FF23 */
+	case 0x13:
 		apu.ch4.length.enable = (val & 0x40) != 0;
 		if (val & 0x80) {
 			trigger_noise();
 		}
 		break;
-	case 0x14: /* FF24 */
+	case 0x14:
 		apu.nr50 = val;
 		break;
-	case 0x15: /* FF25 */
+	case 0x15:
 		apu.nr51 = val;
 		break;
 	default:

@@ -9,18 +9,17 @@
 #include <stdint.h>
 
 // clang-format off
-
 EM_JS(void, gbrc_js_init, (void), {
-	var canvas = document.createElement('canvas');
+	var canvas = document.createElement("canvas");
 	canvas.width = 160;
 	canvas.height = 144;
-	(document.getElementById('emulator') || document.body).appendChild(canvas);
-	Module.gbrcCtx = canvas.getContext('2d');
+	(document.getElementById("emulator") || document.body).appendChild(canvas);
+	Module.gbrcCtx = canvas.getContext("2d");
 	Module.gbrcFrame = Module.gbrcCtx.createImageData(160, 144);
 
 	var KEYMAP = {
-		'KeyX': 0, 'KeyZ': 1, 'ShiftLeft': 2, 'ShiftRight': 2, 'Enter': 3,
-		'ArrowRight': 4, 'ArrowLeft': 5, 'ArrowUp': 6, 'ArrowDown': 7,
+		"KeyX": 0, "KeyZ": 1, "ShiftLeft": 2, "ShiftRight": 2, "Enter": 3,
+		"ArrowRight": 4, "ArrowLeft": 5, "ArrowUp": 6, "ArrowDown": 7,
 	};
 
 	function handle(e, down) {
@@ -33,8 +32,8 @@ EM_JS(void, gbrc_js_init, (void), {
 		e.preventDefault();
 	}
 
-	window.addEventListener('keydown', function(e) { handle(e, true); });
-	window.addEventListener('keyup', function(e) { handle(e, false); });
+	window.addEventListener("keydown", function(e) { handle(e, true); });
+	window.addEventListener("keyup", function(e) { handle(e, false); });
 });
 
 EM_JS(void, gbrc_js_video, (const uint8_t *framebuffer), {
@@ -52,7 +51,6 @@ EM_JS(void, gbrc_js_video, (const uint8_t *framebuffer), {
 	}
 	Module.gbrcCtx.putImageData(Module.gbrcFrame, 0, 0);
 });
-
 // clang-format on
 
 EMSCRIPTEN_KEEPALIVE
