@@ -10,8 +10,6 @@ go install github.com/boxmanllc/gbrc
 
 ## Pipeline
 
-Here's how gbrc's pipeline looks like:
-
 ![](./assets/pipeline.png)
 
 ## Trying out examples
