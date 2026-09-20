@@ -109,10 +109,10 @@ The repository ships with an SDL2 desktop frontend and an Emscripten-based brows
 
 The hooks are:
 
-- `gb_init`, which is called once when the game boots. It receives the game's title and is the right place to set up the platform, i.e. creating a window, opening an audio device or registering event listeners. It returns `false` if initialization fails
-- `gb_poll`, which is called once per frame to drain the platform's event queue. Input events are translated into calls to `gb_set_button` here, and a quit request is recorded so that `gb_should_quit` can report it
-- `gb_should_quit`, which is checked after every `gb_poll` and tells the runtime whether it should stop the game loop
-- `gb_prepare_video`, which is called whenever a frame is complete. It receives a 160x144 framebuffer where each byte holds a 2-bit shade index (0 to 3), which the frontend maps to a palette and presents on screen
-- `gb_prepare_audio`, which is called with a buffer of interleaved left and right 16-bit samples, along with the number of samples, whenever enough of them have been collected. A frontend can queue them for playback or ignore them entirely
+- `gb_init`, which is called once when the game boots. It receives the game's title and is the right place to set up the platform, i.e. creating a window, opening an audio device or registering event listeners. It returns `false` if initialization fails.
+- `gb_poll`, which is called once per frame to drain the platform's event queue. Input events are translated into calls to `gb_set_button` here, and a quit request is recorded so that `gb_should_quit` can report it.
+- `gb_should_quit`, which is checked after every `gb_poll` and tells the runtime whether it should stop the game loop.
+- `gb_prepare_video`, which is called whenever a frame is complete. It receives a 160x144 framebuffer where each byte holds a 2-bit shade index (0 to 3), which the frontend maps to a palette and presents on screen.
+- `gb_prepare_audio`, which is called with a buffer of interleaved left and right 16-bit samples, along with the number of samples, whenever enough of them have been collected. A frontend can queue them for playback or ignore them entirely.
 - `gb_wait_frame`, which is called at the end of every frame and is used to pace the loop, i.e. to keep the game from running faster than the real hardware
-- `gb_shutdown`, which is called once when the loop ends, and is where any platform resources allocated in `gb_init` should be released
+- `gb_shutdown`, which is called once when the loop ends, and is where any platform resources allocated in `gb_init` should be released.
