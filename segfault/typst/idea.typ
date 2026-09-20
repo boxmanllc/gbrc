@@ -10,8 +10,6 @@
   below: 1em,
 )
 
-#let full-date = datetime.today().display("[day] [month repr:long] [year]")
-
 #align(center, text(17pt)[*Box Man: Static recompilation of Game Boy games with LLVM*])
 #align(center)[
   #grid(
@@ -21,7 +19,7 @@
     text(13pt)[*Team Gloog*], image("./assets/gloog.png", height: 1.5em),
   )
 ]
-#align(center, text(11pt)[#full-date])
+#align(center, text(11pt)[12 August 2026])
 
 = Introduction
 

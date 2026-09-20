@@ -10,8 +10,6 @@
   below: 1em,
 )
 
-#let full-date = datetime.today().display("[day] [month repr:long] [year]")
-
 #align(center, text(17pt)[*gbrc: Static recompiler for Game Boy*])
 #align(center)[
   #grid(
@@ -21,7 +19,7 @@
     text(13pt)[*Team Gloog*], image("./assets/gloog.png", height: 1.5em),
   )
 ]
-#align(center, text(11pt)[#full-date])
+#align(center, text(11pt)[18 September 2026])
 
 = Overview
 
@@ -47,6 +45,7 @@ For example, to recompile `tetris.gb` using the SDL frontend example, run the fo
 
 ```bash
 $ git clone https://github.com/boxmanllc/gbrc.git
+$ mkdir -p ./build
 $ clang -O2 -I ./runtime/include $(pkg-config --cflags sdl2) -c ./runtime/examples/sdl/sdl.c -o ./build/sdl.o
 $ gbrc --rom ./tetris.gb --out ./build --frontend ./build/sdl.o
 ```

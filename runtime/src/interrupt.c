@@ -28,6 +28,7 @@ uint16_t interrupt_service(void) {
 	if (!IME) {
 		return 0xFFFF;
 	}
+
 	uint8_t pending = if_reg & ie_reg & 0x1F;
 	if (!pending) {
 		return 0xFFFF;
@@ -46,5 +47,6 @@ uint16_t interrupt_service(void) {
 			return (uint16_t)(0x40 + i * 8);
 		}
 	}
+
 	return 0xFFFF;
 }

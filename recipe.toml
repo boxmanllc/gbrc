@@ -27,7 +27,7 @@ go build -o $OUT/gbrc . &&
 if [ "${FRONTEND:-sdl}" = web ]; then
     GBRC_SHELL=runtime/examples/web/index.html $OUT/gbrc --rom $ROM --out $OUT --target wasm --frontend $FRONTENDS/web.o --save-ir
 else
-    $OUT/gbrc --rom $ROM --out $OUT --frontend $FRONTENDS/sdl.o --save-ir
+    $OUT/gbrc --rom $ROM --out $OUT --frontend $FRONTENDS/sdl.o --save-ir --profile $OUT/tetris.prof
 fi
 """
 run = false
