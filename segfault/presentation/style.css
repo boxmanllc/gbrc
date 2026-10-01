@@ -1,0 +1,52 @@
+#title h1 {
+  margin: 0;
+}
+
+#slipshow-universe #title h2 {
+  margin-top: 0;
+  font-size: 1.4em;
+  color: var(--muted-color);
+  font-style: italic;
+}
+
+#slipshow-drawing-toolbar {
+  display: none;
+}
+
+.slipshow-drawing-mode #slipshow-drawing-toolbar,
+.slipshow-editing-mode #slipshow-drawing-toolbar,
+.slipshow-guiing-mode #slipshow-drawing-toolbar {
+  display: block;
+}
+
+pre {
+  margin: 0;
+  width: fit-content;
+}
+
+.slip-body pre code.hljs,
+.slide-body pre code.hljs {
+  padding: 20px;
+}
+
+.slipshow-rescaler {
+  overflow: visible;
+  width: unset;
+  height: unset;
+  min-width: 0;
+}
+
+#map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 5fr) minmax(0, 1fr);
+  column-gap: 40px;
+  align-items: start;
+  align-content: start;
+}
+
+#intro-column,
+#core-column {
+  display: flex;
+  flex-direction: column;
+  row-gap: 20px;
+}

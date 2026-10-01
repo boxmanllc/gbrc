@@ -1,0 +1,135 @@
+:root {
+    color-scheme: dark;
+    --background-color: #222;
+    --text-color: #fff;
+    --muted-color: #bbb;
+    --link-color: #666;
+    --link-hover-color: #fff;
+    --border-color: #555;
+    --code-bg-color: #444;
+    --code-text-color: #fff;
+}
+
+#slipshow-open-window {
+    background-color: var(--background-color);
+}
+
+#slipshow-counter {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    border-color: var(--text-color);
+    font-size: min(3.515625vw, 6.25vh);
+}
+
+#slipshow-toc {
+    background: var(--code-bg-color);
+    font-size: 1.5625vw;
+}
+
+.slipshow-toc-step {
+    border-color: var(--text-color);
+}
+
+.slipshow-toc-current-step .slipshow-toc-step {
+    background-color: var(--text-color);
+    color: var(--background-color);
+}
+
+body,
+.slip-body,
+.slide .slide-body {
+    font-family:
+        "Linux Libertine O",
+        Linux Libertine,
+        "Iowan Old Style",
+        Georgia,
+        serif;
+    font-size: 48px;
+    color: var(--text-color);
+    background-color: var(--background-color);
+}
+
+.slip-body,
+.slide .slide-body {
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 80px;
+    margin-right: 80px;
+}
+
+a {
+    color: var(--text-color);
+    text-decoration-skip-ink: auto;
+    text-decoration-color: var(--link-color);
+    text-decoration-thickness: 1.5px;
+}
+
+a:hover {
+    text-decoration-color: var(--link-hover-color);
+}
+
+h2:not(#slipshow-toc h2) {
+    text-align: center;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    margin-top: 0.2em;
+    margin-bottom: 0.2em;
+}
+
+p {
+    margin-bottom: 0;
+}
+ul {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.block,
+.theorem,
+.lemma,
+.definition,
+.example,
+.corollary,
+.remark {
+    width: fit-content;
+    margin: 1em auto;
+    background: transparent;
+    border: 5px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: none;
+    padding: 20px;
+}
+
+.block:before,
+.theorem:before,
+.lemma:before,
+.definition:before,
+.example:before,
+.corollary:before,
+.remark:before {
+    background-color: transparent;
+    color: var(--muted-color);
+    margin: 0 0 0.1em 0;
+    padding: 0;
+}
+
+.definition[title]:before,
+.theorem[title]:before {
+    content: attr(title);
+}
+
+code {
+    font-size: 0.8em;
+}
+
+code.hljs {
+    background: var(--code-bg-color);
+    color: var(--code-text-color);
+    border-radius: 8px;
+}

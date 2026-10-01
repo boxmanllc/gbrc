@@ -1,0 +1,51 @@
+---
+dimension: 16:9
+css: https://fonts.cdnfonts.com/css/linux-libertine-o theme.css style.css
+toplevel-attributes: {}
+---
+
+{#map}
+-----
+{#intro-column slip enter="~duration:0.5"}
+----
+{#title}
+> # Presentation title
+> ## Subtitle goes here
+>
+> {style="text-align: center; margin-top: 60px; color: var(--muted-color);"}
+> Author name
+
+{#intro-one}
+> ## Intro column
+>
+> - Placeholder point one
+> - Placeholder point two
+> - Placeholder point three
+
+{pause=intro-one up="~duration:0.5 intro-one"}
+
+{#intro-two}
+> ## Intro column (continued)
+>
+> Placeholder paragraph in the intro column.
+
+{pause=intro-two up="~duration:0.5 intro-two"}
+
+{pause focus="~duration:0.5 intro-column"}
+
+----
+{#core-column slip enter="~duration:0.5"}
+----
+{#core-one}
+> ## Core column
+>
+> Placeholder paragraph in the core column.
+
+{pause=core-one up="~duration:0.5 core-one"}
+
+{#core-two}
+> ## Core column (continued)
+>
+> More placeholder text.
+
+{pause=core-two up="~duration:0.5 core-two"}
