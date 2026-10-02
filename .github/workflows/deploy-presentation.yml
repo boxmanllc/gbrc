@@ -1,0 +1,55 @@
+name: Deploy presentation to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "segfault/presentation/**"
+      - ".github/workflows/deploy-presentation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  SLIPSHOW_VERSION: "0.13.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install slipshow
+        run: |
+          curl -fsSL -o slipshow.tar \
+            "https://github.com/panglesd/slipshow/releases/download/v${SLIPSHOW_VERSION}/slipshow-linux-x86_64.tar"
+          tar -xf slipshow.tar
+          sudo install -m 0755 bin/slipshow /usr/local/bin/slipshow
+          slipshow --help > /dev/null
+
+      - name: Build presentation
+        run: |
+          slipshow compile ./segfault/presentation/presentation.slp -o _site/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
