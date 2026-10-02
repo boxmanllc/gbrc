@@ -4,48 +4,105 @@ css: https://fonts.cdnfonts.com/css/linux-libertine-o theme.css style.css
 toplevel-attributes: {}
 ---
 
-{#map}
+{#sections}
 -----
-{#intro-column slip enter="~duration:0.5"}
+{#title-section slip enter="~duration:0.5"}
 ----
 {#title}
-> # Presentation title
-> ## Subtitle goes here
+> # gbrc
+> ## A tool for recompiling Game Boy games into native executables for any platform
 >
-> {style="text-align: center; margin-top: 60px; color: var(--muted-color);"}
-> Author name
-
-{#intro-one}
-> ## Intro column
+> {style="text-align: center; margin-top: 60px;"}
+> [Mukesh Reddy](https://mukesh.0xc84.fyi)&sup1;, [Rohith Vinod](https://rohith.net)&sup2;
 >
-> - Placeholder point one
-> - Placeholder point two
-> - Placeholder point three
-
-{pause=intro-one up="~duration:0.5 intro-one"}
-
-{#intro-two}
-> ## Intro column (continued)
+> {style="text-align: center; margin-top: 20px; color: var(--muted-color);"}
+> &sup1; National Institute of Technology, Warangal
+> <br />
+> &sup2; Government Engineering College, Palakkad
 >
-> Placeholder paragraph in the intro column.
-
-{pause=intro-two up="~duration:0.5 intro-two"}
-
-{pause focus="~duration:0.5 intro-column"}
+> ![](./assets/gb_startup.mp3){#ding}
+> {play-media=ding}
 
 ----
-{#core-column slip enter="~duration:0.5"}
+{#motivation slip enter="~duration:0.5"}
 ----
-{#core-one}
-> ## Core column
+> # Motivation
+
+{#motivation-part-1}
+> - If someone wants to play a game developed for retro game systems like [NES](https://en.wikipedia.org/wiki/Nintendo_Entertainment_System), [Game Boy](https://en.wikipedia.org/wiki/Game_Boy), [3DS](https://en.wikipedia.org/wiki/Nintendo_3DS), [Wii](https://en.wikipedia.org/wiki/Wii), etc., they'd install an emulator like [Dolphin](https://dolphin-emu.org), [mGBA](https://mgba.io), [Panda3DS](https://panda3ds.com), etc., load the ROM file into it, and play via it.
 >
-> Placeholder paragraph in the core column.
+> {style="display: flex; gap: 40px; align-items: center; justify-content: center;"}
+> ![](./assets/nes.png){width=500px}
+> ![](./assets/gameboy.png){width=300px}
+> ![](./assets/3ds.png){width=420px}
+> ![](./assets/wii.png){width=450px}
 
-{pause=core-one up="~duration:0.5 core-one"}
+{pause=motivation-part-1 up="~duration:0.5 motivation-part-1"}
 
-{#core-two}
-> ## Core column (continued)
->
-> More placeholder text.
+{#motivation-part-2}
+> - All the aforementioned emulator tools use techniques like simple interpreted based emulation or dynamic compilation (JIT-based).
+> - Static recompilation is another approach, where the ROM file is recompiled ahead-of-time into a native executable for a different system.
+> - It is particularly visible in N64 ecosystem due to tools like [N64Recomp](https://github.com/N64Recomp/N64Recomp). It is being used in a project named [Zelda64Recomp](https://github.com/Zelda64Recomp/Zelda64Recomp) which is focused on statically recompiling [Majora's Mask](https://en.wikipedia.org/wiki/The_Legend_of_Zelda%3A_Majora%27s_Mask).
 
-{pause=core-two up="~duration:0.5 core-two"}
+{pause=motivation-part-2 up="~duration:0.5 motivation-part-2"}
+
+{#motivation-part-3}
+> - There are other tools like [Remill](https://github.com/lifting-bits/remill), which is developed by [Trail of Bits](https://trailofbits.com), which uses the idea of lifting binaries to LLVM IR for code portability between different systems.
+
+{pause=motivation-part-3 up="~duration:0.5 motivation-part-3"}
+
+{pause focus="~duration:0.5 motivation"}
+
+----
+{#idea slip enter="~duration:0.5"}
+----
+> # Idea
+
+{#idea-part-1}
+> - After looking at these static recompilation tools and [Andrew Kelley's blog post](https://andrewkelley.me/post/jamulator.html), we came up with the idea of gbrc.
+> - gbrc uses LLVM’s infrastructure to compile a `.gb` file into LLVM IR, then uses any LLVM-compatible compiler to generate a native binary for that specific system.
+> - To produce the native binary for a new target platform, the requirements are: an LLVM backend for that platform and implementing 7 frontend hooks as mentioned in our runtime library for developing the frontend.
+
+{pause=idea-part-1 up="~duration:0.5 idea-part-1"}
+
+{#idea-part-2}
+> - The runtime library is also extremely minimal, making it suitable for running on embedded systems as well, such as microcontrollers like the RP2040, which uses an ARM Cortex-M0, and LLVM has an in-tree ARM target.
+
+{pause=idea-part-2 up="~duration:0.5 idea-part-2"}
+
+{pause focus="~duration:0.5 idea"}
+
+----
+{#demo slip enter="~duration:0.5"}
+----
+> # Demo
+
+> - It's demo time, yay!
+----
+{#architecture slip enter="~duration:0.5"}
+----
+> # Architecture
+
+----
+{#compilation-pipeline slip enter="~duration:0.5"}
+----
+> # Compilation Pipeline
+----
+{#technical-details-analyzer slip enter="~duration:0.5"}
+----
+> # Technical Details (Analyzer)
+----
+{#technical-details-codegen slip enter="~duration:0.5"}
+----
+> # Technical Details (Codegen)
+----
+{#future-plans slip enter="~duration:0.5"}
+----
+> # Future Plans
+----
+{#outro slip enter="~duration:0.5"}
+----
+> {style=""}
+> # Thank you!
+> Made using [slipshow](https://docs.slipshow.org/en/stable/) and used [Ryan Gibb's ICFP 2026 talk](https://ryan.freumh.org/talks/slides/2026-icfp-package-calculus.html) as a theme reference
+----
