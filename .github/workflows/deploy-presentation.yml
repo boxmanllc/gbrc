@@ -33,6 +33,7 @@ jobs:
 
       - name: Build presentation
         run: |
+          mkdir -p _site \
           slipshow compile ./segfault/presentation/presentation.slp -o _site/index.html
 
       - name: Setup Pages
