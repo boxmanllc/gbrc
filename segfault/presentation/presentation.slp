@@ -59,14 +59,19 @@ toplevel-attributes: {}
 > ![](./assets/demo_dr_mario.png)
 
 {#demo-web}
-> ![](./assets/web_demo.mp4){#demo-web-video controls width=100%}
+> ![](./assets/demo_web.mp4){#demo-web-video controls width=100%}
 
 {pause=demo-web up="~duration:0.5 demo-web"}
 
 {#demo-desktop}
-> ![](./assets/web_demo.mp4){#demo-desktop-video controls width=100%}
+> ![](./assets/demo_web.mp4){#demo-desktop-video controls width=100%}
 
 {pause=demo-desktop up="~duration:0.5 demo-desktop"}
+
+{#demo-pico}
+> ![](./assets/demo_pico.mp4){#demo-pico-video controls width=100%}
+
+{pause=demo-pico up="~duration:0.5 demo-pico"}
 
 {pause focus="~duration:0.5 demo"}
 
