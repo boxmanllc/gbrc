@@ -10,7 +10,7 @@ toplevel-attributes: {}
 ----
 {#title}
 > # gbrc
-> ## A tool for recompiling Game Boy games into native executables for any platform
+> ## A tool for recompiling Game Boy games into native executables
 >
 > {style="text-align: center; margin-top: 60px;"}
 > [Mukesh Reddy](https://mukesh.0xc84.fyi)&sup1;, [Rohith Vinod](https://rohith.net)&sup2;
@@ -28,49 +28,22 @@ toplevel-attributes: {}
 ----
 > # Motivation
 
-{#motivation-part-1}
-> - If someone wants to play a game developed for retro game systems like [NES](https://en.wikipedia.org/wiki/Nintendo_Entertainment_System), [Game Boy](https://en.wikipedia.org/wiki/Game_Boy), [3DS](https://en.wikipedia.org/wiki/Nintendo_3DS), [Wii](https://en.wikipedia.org/wiki/Wii), etc., they'd install an emulator like [Dolphin](https://dolphin-emu.org), [mGBA](https://mgba.io), [Panda3DS](https://panda3ds.com), etc., load the ROM file into it, and play via it.
->
-> {style="display: flex; gap: 40px; align-items: center; justify-content: center;"}
-> ![](./assets/nes.png){width=500px}
-> ![](./assets/gameboy.png){width=300px}
-> ![](./assets/3ds.png){width=420px}
-> ![](./assets/wii.png){width=450px}
+> - If someone wants to play a game developed for retro systems like [NES](https://en.wikipedia.org/wiki/Nintendo_Entertainment_System), [Game Boy](https://en.wikipedia.org/wiki/Game_Boy), [3DS](https://en.wikipedia.org/wiki/Nintendo_3DS) or [Wii](https://en.wikipedia.org/wiki/Wii), they install an emulator like [Dolphin](https://dolphin-emu.org), [mGBA](https://mgba.io) or [Panda3DS](https://panda3ds.com), load the ROM, and play.
+> - Most of these emulators either interpret the ROM's instructions or JIT compile them.
 
-{pause=motivation-part-1 up="~duration:0.5 motivation-part-1"}
-
-{#motivation-part-2}
-> - All the aforementioned emulator tools use techniques like simple interpreted based emulation or dynamic compilation (JIT-based).
-> - Static recompilation is another approach, where the ROM file is recompiled ahead-of-time into a native executable for a different system.
-> - It is particularly visible in N64 ecosystem due to tools like [N64Recomp](https://github.com/N64Recomp/N64Recomp). It is being used in a project named [Zelda64Recomp](https://github.com/Zelda64Recomp/Zelda64Recomp) which is focused on statically recompiling [Majora's Mask](https://en.wikipedia.org/wiki/The_Legend_of_Zelda%3A_Majora%27s_Mask).
-
-{pause=motivation-part-2 up="~duration:0.5 motivation-part-2"}
-
-{#motivation-part-3}
-> - There are other tools like [Remill](https://github.com/lifting-bits/remill), which is developed by [Trail of Bits](https://trailofbits.com), which uses the idea of lifting binaries to LLVM IR for code portability between different systems.
-
-{pause=motivation-part-3 up="~duration:0.5 motivation-part-3"}
-
-{pause focus="~duration:0.5 motivation"}
+> - Another approach is _static recompilation_, where the ROM's instructions are translated to native machine code ahead of time, producing a native executable.
+> - It is particularly visible within the [N64](https://en.wikipedia.org/wiki/Nintendo_64) ecosystem due to tools like [N64Recomp](https://github.com/N64Recomp/N64Recomp), used by [Zelda64Recomp](https://github.com/Zelda64Recomp/Zelda64Recomp) to statically recompile [Majora's Mask](https://en.wikipedia.org/wiki/The_Legend_of_Zelda%3A_Majora%27s_Mask).
+> - As the result is native code, you don't need an emulator or additional host OS to run the games, making it simple to run on anything the target supports, including bare-metal microcontrollers.
 
 ----
 {#idea slip enter="~duration:0.5"}
 ----
 > # Idea
 
-{#idea-part-1}
-> - After looking at these static recompilation tools and [Andrew Kelley's blog post](https://andrewkelley.me/post/jamulator.html), we came up with the idea of gbrc.
-> - gbrc uses LLVM’s infrastructure to compile a `.gb` file into LLVM IR, then uses any LLVM-compatible compiler to generate a native binary for that specific system.
-> - To produce the native binary for a new target platform, the requirements are: an LLVM backend for that platform and implementing 7 frontend hooks as mentioned in our runtime library for developing the frontend.
-
-{pause=idea-part-1 up="~duration:0.5 idea-part-1"}
-
-{#idea-part-2}
-> - The runtime library is also extremely minimal, making it suitable for running on embedded systems as well, such as microcontrollers like the RP2040, which uses an ARM Cortex-M0, and LLVM has an in-tree ARM target.
-
-{pause=idea-part-2 up="~duration:0.5 idea-part-2"}
-
-{pause focus="~duration:0.5 idea"}
+> - Inspired by the above tools and Andrew Kelley's [Jamulator blog post](https://andrewkelley.me/post/jamulator.html) on statically recompiling NES games with LLVM, we applied the same idea to Game Boy.
+> - gbrc lifts a Game Boy ROM (a `.gb` file) into LLVM IR and then lowers it to a native executable for any target which LLVM supports.
+> - Only the game code is statically recompiled. The graphics, audio, timer and input hardware components cannot be recompiled as they're reached through a memory-mapped I/O so instead a runtime library emulates their behavior.
+> - The runtime library exposes a small frontend API via which different frontend shells can be developed like SDL2 on Desktop, Emscripten on Web, or bare-metal frontend that interacts with an LCD and speaker directly on a microcontroller. These can be then paired with the same LLVM IR.
 
 ----
 {#demo slip enter="~duration:0.5"}
@@ -78,27 +51,102 @@ toplevel-attributes: {}
 > # Demo
 
 > - It's demo time, yay!
+> - We'll be showing of Tetris running on Desktop using SDL2, Tennis running on Web using WebAssembly and Dr. Mario running on Raspberry Pi Pico (RP2040).
+>
+> {.figure-row}
+> ![](./assets/demo_tetris.png)
+> ![](./assets/demo_tennis.png)
+> ![](./assets/demo_dr_mario.png)
+
+{#demo-web}
+> ![](./assets/web_demo.mp4){#demo-web-video controls width=100%}
+
+{pause=demo-web up="~duration:0.5 demo-web"}
+
+{#demo-desktop}
+> ![](./assets/web_demo.mp4){#demo-desktop-video controls width=100%}
+
+{pause=demo-desktop up="~duration:0.5 demo-desktop"}
+
+{pause focus="~duration:0.5 demo"}
+
 ----
 {#architecture slip enter="~duration:0.5"}
 ----
 > # Architecture
 
+{#architecture-part-1}
+> - The first step is recovering the game's CFG. It starts from a set of known entry points (including reset vectors, interrupt vectors, and the start of boot loader ROM and user code).
+> - More entry points can be discovered dynamically by running the generated binary with `--profile` flag to record the encountered PC values and then recompiling with that profile.
+> - Each basic block is lowered to LLVM IR and funnels through a single shared return dispatcher, which routes control flow between basic blocks.
+> - The IR is then optimized and compiled using the existing LLVM backends.
+
+{pause=architecture-part-1 up="~duration:0.5 architecture-part-1"}
+
+{#architecture-part-2}
+> {.figure-row}
+> ![](./assets/architecture.png){width=2400px}
+
+{pause=architecture-part-2 up="~duration:0.5 architecture-part-2"}
+
+{pause focus="~duration:0.5 architecture"}
+
 ----
 {#compilation-pipeline slip enter="~duration:0.5"}
 ----
 > # Compilation Pipeline
+
+> {.figure-row}
+> ![](./assets/pipeline.png){width=1300px}
+
 ----
 {#technical-details-analyzer slip enter="~duration:0.5"}
 ----
 > # Technical Details (Analyzer)
+
+> - The CFG recovery is done using a worklist-style static discovery pass.
+> - It starts from a set of known entry points and then recursively decodes opcodes until it hits a block terminator and records that span of opcodes as a single basic block.
+> - As it decodes, it derives each instruction's possible successors and adds them to the worklist.
+> - This handles instructions with static targets, but for instructions with dynamic targets like `JP HL`, `RET` and `RETI`, the successors can't be computed at compile time, so these are instead handled by a fallback emulator which is present in the runtime library.
+
 ----
 {#technical-details-codegen slip enter="~duration:0.5"}
 ----
 > # Technical Details (Codegen)
+
+{#technical-details-codegen-part-1}
+> - All the registers, status flags, and additional machine state information are stored as global variables.
+>
+> {.figure-row}
+> ![](./assets/codegen_global_variables.png)
+
+{pause=technical-details-codegen-part-1 up="~duration:0.5 technical-details-codegen-part-1"}
+
+{#technical-details-codegen-part-2}
+> - A special global variable called `g_budget` is used to know when to hand off the execution to render the graphics and audio i.e. tick PPU, APU and timer. It is set to the current machine cycle count + one frame's worth of machine cycles (17556) after each frame.
+
+{pause=technical-details-codegen-part-2 up="~duration:0.5 technical-details-codegen-part-2"}
+
+{#technical-details-codegen-part-3}
+> - The program's entrypoint in LLVM IR is `rom_main` function which contains one label per basic block and each distinct instruction is emitted as a helper function.
+> - After a block finishes, it jumps to the return dispatcher, the central hub that decides where execution goes next. On each visit it performs the following checks, in order:
+>   - Is cycle deadline exhausted i.e. `cycles` >= `g_budget`? If yes, it returns, letting the runtime take over and tick PPU, timer and APU for that frame.
+>   - Checks whether interrupts are enabled using `IME` flag and is an interrupt is pending. If so, it services it and updates the program counter to that particular vector.
+>   - The LLVM IR maintains a lookup table of program counter to basic block. If the lookup fails, then it means that IR lifting process failed to capture that and it falls back to the emulator.
+
+{pause=technical-details-codegen-part-3 up="~duration:0.5 technical-details-codegen-part-3"}
+
+{pause focus="~duration:0.5 technical-details-codegen"}
+
 ----
 {#future-plans slip enter="~duration:0.5"}
 ----
 > # Future Plans
+
+> - Adding support for memory bank controllers (MBCs) to be able to run cartridges larger than 32 KiB.
+> - Adding support for Game Boy Color (GBC), which is pretty much like DMG-01 but with additional features.
+> - Improving the static discovery pass with jump-table detection and value analysis to resolve dynamic targets up till a good coverage without an additional profile run.
+
 ----
 {#outro slip enter="~duration:0.5"}
 ----

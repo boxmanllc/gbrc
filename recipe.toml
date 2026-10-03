@@ -1,5 +1,5 @@
 [env]
-ROM = "roms/tetris.gb"
+ROM = "roms/dr_mario.gb"
 OUT = "build"
 FRONTENDS = "build/frontends"
 

@@ -32,6 +32,15 @@ pre {
 #sections {
     display: flex;
     flex-direction: row;
+    width: max-content;
+}
+
+#sections > * {
+    flex: 0 0 auto;
+}
+
+#slipshow-universe {
+    width: max-content;
 }
 
 #title-section .slip-body {
@@ -47,4 +56,11 @@ pre {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+}
+
+.figure-row {
+    display: flex;
+    gap: 40px;
+    align-items: center;
+    justify-content: center;
 }
