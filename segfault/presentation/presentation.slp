@@ -64,7 +64,7 @@ toplevel-attributes: {}
 {pause=demo-web up="~duration:0.5 demo-web"}
 
 {#demo-desktop}
-> ![](./assets/demo_web.mp4){#demo-desktop-video controls width=100%}
+> ![](./assets/demo_desktop.mp4){#demo-desktop-video controls width=100%}
 
 {pause=demo-desktop up="~duration:0.5 demo-desktop"}
 

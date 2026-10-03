@@ -1,5 +1,5 @@
 [env]
-ROM = "roms/dr_mario.gb"
+ROM = "roms/tennis.gb"
 OUT = "build"
 FRONTENDS = "build/frontends"
 
