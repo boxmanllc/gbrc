@@ -73,6 +73,13 @@ toplevel-attributes: {}
 
 {pause=demo-pico up="~duration:0.5 demo-pico"}
 
+{#demo-additional-notes}
+> ### Additional notes
+> - In the Tetris demo above, without dynamic seed discovery (the `--profile` flag), roughly 96–97% of executed cycles run as lifted LLVM IR, and the remainder falls back to the emulator.
+> - After running the compiled binary with `--profile` for about a minute and then recompiling with the entry points it discovered, roughly 99.2% of executed cycles run as lifted LLVM IR, and the remainder falls back to the emulator.
+
+{pause=demo-additional-notes up="~duration:0.5 demo-additional-notes"}
+
 {pause focus="~duration:0.5 demo"}
 
 ----
