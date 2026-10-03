@@ -1,5 +1,3 @@
-// TODO: need to add audio in web example without the jittering issue
-
 #define GB_IMPLEMENTATION
 #include "gbrc.h"
 
@@ -10,11 +8,12 @@
 
 // clang-format off
 EM_JS(void, gbrc_js_init, (void), {
-	var canvas = document.createElement("canvas");
+	var root = document.getElementById('emulator') || document.body;
+	var canvas = document.createElement('canvas');
 	canvas.width = 160;
 	canvas.height = 144;
-	(document.getElementById("emulator") || document.body).appendChild(canvas);
-	Module.gbrcCtx = canvas.getContext("2d");
+	root.appendChild(canvas);
+	Module.gbrcCtx = canvas.getContext('2d');
 	Module.gbrcFrame = Module.gbrcCtx.createImageData(160, 144);
 
 	var KEYMAP = {
@@ -32,22 +31,80 @@ EM_JS(void, gbrc_js_init, (void), {
 		e.preventDefault();
 	}
 
-	window.addEventListener("keydown", function(e) { handle(e, true); });
-	window.addEventListener("keyup", function(e) { handle(e, false); });
+	window.addEventListener('keydown', function(e) { handle(e, true); });
+	window.addEventListener('keyup', function(e) { handle(e, false); });
+
+	function startAudio() {
+		var AC = window.AudioContext || window.webkitAudioContext;
+		if (!AC) {
+			return;
+		}
+
+		var SIZE = 16384;
+		var a = {
+			ctx: new AC({ sampleRate: 44100 }),
+			l: new Float32Array(SIZE), r: new Float32Array(SIZE),
+			rd: 0, wr: 0, mask: SIZE - 1, lastL: 0, lastR: 0,
+		};
+		Module.gbrcAudio = a;
+
+		var node = a.ctx.createScriptProcessor(1024, 0, 2);
+		node.onaudioprocess = function(e) {
+			var L = e.outputBuffer.getChannelData(0);
+			var R = e.outputBuffer.getChannelData(1);
+			for (var i = 0; i < L.length; i++) {
+				if (a.rd !== a.wr) {
+					a.lastL = a.l[a.rd];
+					a.lastR = a.r[a.rd];
+					a.rd = (a.rd + 1) & a.mask;
+				}
+				L[i] = a.lastL;
+				R[i] = a.lastR;
+			}
+		};
+		node.connect(a.ctx.destination);
+		a.ctx.resume();
+	}
+
+	var play = document.createElement('button');
+	play.id = 'play';
+	play.textContent = '▶';
+	root.appendChild(play);
+	play.addEventListener('click', function() {
+		play.remove();
+		startAudio();
+		Module._gbrc_start();
+	});
+});
+
+EM_JS(void, gbrc_js_audio, (const int16_t *samples, int count), {
+	var a = Module.gbrcAudio;
+	if (!a || a.ctx.state !== 'running') {
+		return;
+	}
+
+	var MAX = 2048;
+	var base = samples >> 1;
+	for (var i = 0; i + 1 < count; i += 2) {
+		if (((a.wr - a.rd) & a.mask) >= MAX) {
+			return;
+		}
+		a.l[a.wr] = HEAP16[base + i] / 32768;
+		a.r[a.wr] = HEAP16[base + i + 1] / 32768;
+		a.wr = (a.wr + 1) & a.mask;
+	}
 });
 
 EM_JS(void, gbrc_js_video, (const uint8_t *framebuffer), {
-	var palette = [
-		[0xE0, 0xF8, 0xD0], [0x88, 0xC0, 0x70],
-		[0x34, 0x68, 0x56], [0x08, 0x18, 0x20],
-	];
-	var data = Module.gbrcFrame.data;
-	for (var i = 0, j = 0; i < 160 * 144; i++, j += 4) {
-		var c = palette[HEAPU8[framebuffer + i] & 3];
-		data[j] = c[0];
-		data[j + 1] = c[1];
-		data[j + 2] = c[2];
-		data[j + 3] = 0xFF;
+	if (!Module.gbrcPixels) {
+		Module.gbrcPixels = new Uint32Array(Module.gbrcFrame.data.buffer);
+		Module.gbrcPalette = new Uint32Array([
+			0xFFD0F8E0, 0xFF70C088, 0xFF566834, 0xFF201808,
+		]);
+	}
+	var px = Module.gbrcPixels, pal = Module.gbrcPalette;
+	for (var i = 0; i < 160 * 144; i++) {
+		px[i] = pal[HEAPU8[framebuffer + i] & 3];
 	}
 	Module.gbrcCtx.putImageData(Module.gbrcFrame, 0, 0);
 });
@@ -76,17 +133,25 @@ void gb_prepare_video(const uint8_t *framebuffer) {
 }
 
 void gb_prepare_audio(const int16_t *samples, int count) {
-	(void)samples;
-	(void)count;
+	gbrc_js_audio(samples, count);
 }
 
 void gb_wait_frame(void) {}
 
-int main(void) {
-	if (!gb_attach(NULL)) {
-		return 1;
+static void frame(void) {
+	static double next;
+	const double period = 1000.0 * GB_CYCLES_PER_FRAME * 4 / GB_CPU_HZ;
+
+	double now = emscripten_get_now();
+	if (now < next - period / 4) {
+		return;
 	}
 
-	emscripten_set_main_loop(gb_step, 0, 1);
-	return 0;
+	next = (now - next > period) ? now + period : next + period;
+	gb_step();
 }
+
+EMSCRIPTEN_KEEPALIVE
+void gbrc_start(void) { emscripten_set_main_loop(frame, 0, 0); }
+
+int main(void) { return gb_attach(NULL) ? 0 : 1; }
